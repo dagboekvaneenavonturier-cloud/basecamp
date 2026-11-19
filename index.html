@@ -45,4 +45,28 @@ async function reviewMember(id,status){const {error}=await sb.from('profiles').u
 // Aanmelden en afmelden worden expliciet door de formulieracties verwerkt.
 }catch(e){notice(e.message||'BASECAMP kon niet verbinden met Supabase.','error')}})();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+
+// WACHTWOORD HERSTELLEN
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    const newPassword = prompt('Kies een nieuw wachtwoord (minstens 8 tekens):');
+
+    if (!newPassword || newPassword.length < 8) {
+      alert('Je wachtwoord moet minstens 8 tekens bevatten. Vraag indien nodig opnieuw een herstelmail aan.');
+      return;
+    }
+
+    const { error } = await sb.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      alert('Wachtwoord wijzigen is niet gelukt: ' + error.message);
+    } else {
+      alert('Je wachtwoord is succesvol gewijzigd. Je kunt nu inloggen.');
+      await sb.auth.signOut();
+      location.href = location.origin + location.pathname;
+    }
+  }
+});
 </script></body></html>
