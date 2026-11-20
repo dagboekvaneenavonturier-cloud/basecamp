@@ -1663,7 +1663,7 @@ async function chat() {
   }
 
   const {data:groups,error} = await sb.from('groups')
-    .select('id,name,description')
+    .select('id,name,description,is_private,trip_id')
     .order('name');
 
   if (error) throw error;
@@ -1703,14 +1703,14 @@ async function chat() {
       ${groups.map(g => `
         <button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')">
           <b>${esc(g.name)}</b><br>
-          <small>${joined.has(g.id) ? 'Lid' : 'Open groep'}</small>
+          <small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small>
         </button>
       `).join('')}
     </div>
 
     <div class="chatmain">
       <div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">
-        ${esc(group.name)}
+        ${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}
       </div>
 
       <div class="msgs" id="msgs">
@@ -1776,6 +1776,8 @@ async function createChatGroup() {
 }
 
 async function deleteChatGroup(groupId) {
+  const {data: targetGroup} = await sb.from('groups').select('is_private').eq('id',groupId).maybeSingle();
+  if (targetGroup?.is_private) { alert('Deze privéreischat wordt automatisch beheerd via de bevestigde deelnemers van de reis.'); return; }
   if (!confirm('Wil je deze chatgroep verwijderen? Alle berichten en lidmaatschappen in deze groep worden ook verwijderd.')) return;
   let result = await sb.from('messages').delete().eq('group_id',groupId);
   if (result.error) { alert('Berichten verwijderen lukte niet: ' + result.error.message); return; }
@@ -2082,7 +2084,7 @@ async function admin() {
   }
 
   if (adminSection === 'chatgroups') {
-    const {data:groups,error} = await sb.from('groups').select('id,name,description,created_at').order('name');
+    const {data:groups,error} = await sb.from('groups').select('id,name,description,created_at,is_private,trip_id').order('name');
     if (error) throw error;
     const {data:counts,error:countError} = await sb.from('group_members').select('group_id');
     if (countError) throw countError;
@@ -2095,7 +2097,7 @@ async function admin() {
       <button class="btn" style="margin-top:10px" onclick="createChatGroup()">Chatgroep aanmaken</button>
     </div>
     <div class="card"><h3>Bestaande chatgroepen (${groups.length})</h3>
-      ${(groups || []).map(g => `<div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${esc(g.name)}</b><div class="muted">${esc(g.description || 'Geen beschrijving')} · ${(memberCounts[g.id] || 0)} leden</div></div><button class="btn light" onclick="deleteChatGroup('${g.id}')">Groep verwijderen</button></div>`).join('') || '<p class="muted">Er zijn nog geen chatgroepen.</p>'}
+      ${(groups || []).map(g => `<div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${esc(g.name)}${g.is_private ? ' · 🔒 Privéreischat' : ''}</b><div class="muted">${esc(g.description || 'Geen beschrijving')} · ${(memberCounts[g.id] || 0)} leden${g.is_private ? ' · Automatisch gekoppeld aan reis' : ''}</div></div>${g.is_private ? '<span class="tag">Automatisch beheerd</span>' : `<button class="btn light" onclick="deleteChatGroup('${g.id}')">Groep verwijderen</button>`}</div>`).join('') || '<p class="muted">Er zijn nog geen chatgroepen.</p>'}
     </div>`;
   }
 
