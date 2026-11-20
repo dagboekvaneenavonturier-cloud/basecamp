@@ -1496,6 +1496,7 @@ async function saveProfile() {
 
 
 
+
 async function admin() {
   if (!['admin','moderator'].includes(me.role)) {
     return 'Geen toegang.';
@@ -1553,6 +1554,9 @@ async function admin() {
             ${people.length
               ? `<p class="muted">${people.map(i => esc(names[i.user_id] || 'Avonturier')).join(', ')}</p>`
               : '<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+            <button class="btn light" onclick="archiveTrip('${t.id}')">
+              Verwijderen uit aanbod
+            </button>
           </div>
         `;
       }).join('') || '<p class="muted">Er zijn nog geen gepubliceerde reizen.</p>'}
@@ -1571,7 +1575,7 @@ async function admin() {
       <input id="ts" type="date">
       <input id="te" type="date" style="margin:8px 0">
       <textarea id="tx" placeholder="Omschrijving"></textarea>
-<input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
+      <input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
       <button class="btn" onclick="addTrip()">Reis toevoegen en publiceren</button>
     </div>`;
 }
