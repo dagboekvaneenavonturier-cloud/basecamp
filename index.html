@@ -650,40 +650,174 @@ async function addPost() {
 
 /* HOME */
 
+
 async function home() {
-  return `<div class="hero">
-    <div class="eyebrow">DAGBOEK VAN EEN AVONTURIER</div>
-    <h1>Welkom op Basecamp,<br>${esc(me.display_name || 'avonturier')}.</h1>
-    <p>Jouw digitale ontmoetingsplaats voor nieuwe plannen, sterke verhalen en avonturiers die dezelfde goesting delen.</p>
-    <button class="btn gold" onclick="go('community')">
-      Ontmoet de community →
-    </button>
-  </div>
+  const {data:trips,error:tripError} = await sb.from('trips')
+    .select('id,title,destination,description,start_date,end_date,status')
+    .eq('status','published')
+    .order('start_date')
+    .limit(3);
 
-  <h2 style="font:23px Georgia;margin-top:25px">Waar heb je zin in?</h2>
+  if (tripError) throw tripError;
 
-  <div class="grid">
-    <div class="card" onclick="go('community')">
-      <h3>◎ Community</h3>
-      <p class="muted">Deel verhalen en stel vragen.</p>
-    </div>
-    <div class="card" onclick="go('discover')">
-      <h3>⌖ Ontdek avonturen</h3>
-      <p class="muted">Bekijk reizen en activiteiten.</p>
-    </div>
-    <div class="card" onclick="go('chat')">
-      <h3>☏ Groepsgesprekken</h3>
-      <p class="muted">Praat met andere avonturiers.</p>
-    </div>
-    <div class="card" onclick="go('profile')">
-      <h3>◉ Mijn profiel</h3>
-      <p class="muted">Vertel wie je bent.</p>
-    </div>
-  </div>
+  const {data:posts,error:postError} = await sb.from('posts')
+    .select('id,user_id,content,image_url,created_at')
+    .order('created_at',{ascending:false})
+    .limit(3);
 
-  <h2 style="font:23px Georgia">Uit de community</h2>
-  ${await postsHtml()}`;
+  if (postError) throw postError;
+
+  const names = await profilesFor((posts || []).map(p => p.user_id));
+
+  return `
+    <div class="hero" style="
+      background:linear-gradient(120deg,rgba(25,48,35,.96),rgba(74,101,70,.86)),
+      url('https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1400');
+      background-size:cover;
+      background-position:center;
+      padding:38px 27px;
+      ">
+      <div class="eyebrow">JOUW DIGITALE UITVALSBASIS</div>
+      <h1>Welkom terug,<br>${esc(me.display_name || 'avonturier')}.</h1>
+      <p style="max-width:520px;line-height:1.7">
+        Nieuwe plannen, onverwachte ontmoetingen en avonturen die wachten
+        om beleefd te worden. Fijn dat je hier bent.
+      </p>
+      <button class="btn gold" onclick="go('community')">
+        Ontmoet andere avonturiers →
+      </button>
+    </div>
+
+    <div style="margin:28px 0 12px">
+      <div class="eyebrow">JOUW UITVALSBASIS</div>
+      <h2 style="font:25px Georgia;margin:7px 0">
+        Wat brengt je vandaag hier?
+      </h2>
+      <p class="muted">
+        Laat je inspireren, ontmoet gelijkgestemden of ontdek je volgende avontuur.
+      </p>
+    </div>
+
+    <div class="grid">
+      <div class="card" onclick="go('community')" style="cursor:pointer">
+        <div style="font-size:25px">🏕️</div>
+        <h3>Ontmoet</h3>
+        <p class="muted">Deel verhalen, foto's en plannen met de community.</p>
+        <span class="tag">Naar de community →</span>
+      </div>
+
+      <div class="card" onclick="go('discover')" style="cursor:pointer">
+        <div style="font-size:25px">🧭</div>
+        <h3>Ontdek</h3>
+        <p class="muted">Vind nieuwe expedities, trekkings en packraftreizen.</p>
+        <span class="tag">Bekijk avonturen →</span>
+      </div>
+
+      <div class="card" onclick="go('chat')" style="cursor:pointer">
+        <div style="font-size:25px">💬</div>
+        <h3>Praat mee</h3>
+        <p class="muted">Wissel ideeën uit en leer andere avonturiers kennen.</p>
+        <span class="tag">Naar de chat →</span>
+      </div>
+
+      <div class="card" onclick="go('profile')" style="cursor:pointer">
+        <div style="font-size:25px">🎒</div>
+        <h3>Stel jezelf voor</h3>
+        <p class="muted">Vertel wie je bent en waar jouw avontuurlijke interesses liggen.</p>
+        <span class="tag">Mijn profiel →</span>
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="row">
+        <div>
+          <div class="eyebrow">DE VOLGENDE HORIZON</div>
+          <h2 style="font:25px Georgia;margin:7px 0">
+            Ontdek onze avonturen
+          </h2>
+        </div>
+        <button class="btn light" onclick="go('discover')">
+          Alle reizen →
+        </button>
+      </div>
+
+      <div class="grid">
+        ${(trips || []).map(t => `
+          <div class="card">
+            <span class="tag">${esc(t.destination || 'Avontuur')}</span>
+            <h3>${esc(t.title)}</h3>
+            <p class="muted">
+              ${esc(t.description || 'Ontdek dit avontuur van Dagboek van een Avonturier.')}
+            </p>
+            ${t.start_date ? `
+              <p class="muted">
+                📅 ${new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE')}
+                ${t.end_date ? ' – '+new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE') : ''}
+              </p>
+            ` : ''}
+          </div>
+        `).join('') || `
+          <div class="card">
+            <p class="muted">
+              Nieuwe avonturen verschijnen hier binnenkort.
+            </p>
+          </div>
+        `}
+      </div>
+    </div>
+
+    <div style="margin-top:30px">
+      <div class="eyebrow">VANUIT HET BASECAMP</div>
+      <h2 style="font:25px Georgia;margin:7px 0">
+        Wat leeft er in de community?
+      </h2>
+      <p class="muted">
+        Verhalen, foto's en updates van andere avonturiers.
+      </p>
+
+      ${(posts || []).map(p => `
+        <article class="post">
+          <div class="feedtop">
+            <b>${esc(names[p.user_id] || 'Avonturier')}</b>
+            · ${new Date(p.created_at).toLocaleDateString('nl-BE')}
+          </div>
+          ${p.content ? `<p>${esc(p.content)}</p>` : ''}
+          ${p.image_url ? `
+            <img src="${esc(p.image_url)}"
+              alt="Communityfoto"
+              loading="lazy"
+              style="width:100%;max-height:350px;object-fit:contain;border-radius:10px;margin:10px 0">
+          ` : ''}
+        </article>
+      `).join('') || `
+        <div class="card">
+          <p class="muted">
+            Er zijn nog geen berichten. Misschien wordt jouw verhaal wel het eerste!
+          </p>
+        </div>
+      `}
+
+      <button class="btn" onclick="go('community')">
+        Naar alle communityberichten →
+      </button>
+    </div>
+
+    <div class="hero" style="margin-top:30px;padding:25px">
+      <div class="eyebrow">KLEINE GROEPEN, GROOT AVONTUUR</div>
+      <h2 style="font:25px Georgia;margin:10px 0">
+        Misschien trekken we binnenkort samen op pad.
+      </h2>
+      <p>
+        Ontdek onze avonturen, stel je vragen en leer de mensen achter
+        Dagboek van een Avonturier kennen.
+      </p>
+      <button class="btn gold" onclick="go('discover')">
+        Vind jouw volgende avontuur →
+      </button>
+    </div>
+  `;
 }
+
 
 async function community() {
   return section(
