@@ -1126,6 +1126,7 @@ async function saveProfile() {
 
 /* BEHEER */
 
+
 async function admin() {
   if (!['admin','moderator'].includes(me.role)) {
     return 'Geen toegang.';
@@ -1138,11 +1139,50 @@ async function admin() {
 
   if (error) throw error;
 
-  return section('TEAM BASECAMP','Beheer','Beheer leden en publiceer updates.')
-    + `<div class="card">
-      <b>${pending.length} aanvragen wachten op goedkeuring</b>
+  const {data:trips,error:tripError} = await sb.from('trips')
+    .select('id,title,destination')
+    .eq('status','published')
+    .order('title');
 
-      ${pending.map(u => `
+  if (tripError) throw tripError;
+
+  const {data:interests,error:interestError} = await sb
+    .from('trip_interests')
+    .select('trip_id,user_id,created_at');
+
+  if (interestError) throw interestError;
+
+  const names = await profilesFor(
+    (interests || []).map(i => i.user_id)
+  );
+
+  const interestOverview = (trips || []).map(t => {
+    const members = (interests || [])
+      .filter(i => i.trip_id === t.id);
+
+    return `
+      <div style="border-top:1px solid var(--line);padding:12px 0">
+        <h3>${esc(t.title)}</h3>
+        <span class="tag">${members.length} geïnteresseerde(n)</span>
+
+        ${members.length
+          ? `<ul>
+              ${members.map(i => `
+                <li>${esc(names[i.user_id] || 'Avonturier')}</li>
+              `).join('')}
+            </ul>`
+          : '<p class="muted">Nog niemand heeft interesse getoond.</p>'
+        }
+      </div>
+    `;
+  }).join('');
+
+  return section('TEAM BASECAMP','Beheer','Beheer leden en publiceer updates.')
+
+    + `<div class="card">
+      <b>${(pending || []).length} aanvragen wachten op goedkeuring</b>
+
+      ${(pending || []).map(u => `
         <p>
           ${esc(u.display_name || 'Nieuw lid')}
           · ${new Date(u.created_at).toLocaleDateString('nl-BE')}
@@ -1150,6 +1190,12 @@ async function admin() {
           <button class="btn light" onclick="reviewMember('${u.id}','rejected')">Weigeren</button>
         </p>
       `).join('') || '<p class="muted">Geen openstaande aanvragen.</p>'}
+    </div>
+
+    <div class="card">
+      <h3>Reisinteresses</h3>
+      <p class="muted">Hier zie je welke leden interesse hebben getoond in onze reizen.</p>
+      ${interestOverview || '<p class="muted">Er zijn nog geen gepubliceerde reizen.</p>'}
     </div>
 
     <div class="card">
@@ -1168,6 +1214,7 @@ async function admin() {
       <button class="btn" onclick="addTrip()">Reis toevoegen en publiceren</button>
     </div>`;
 }
+
 
 async function reviewMember(id,status) {
   const {error} = await sb.from('profiles')
