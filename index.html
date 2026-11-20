@@ -164,6 +164,7 @@ main{padding:18px 14px 85px}
       <button data-page="home" class="active">⌂ Home</button>
       <button data-page="community">◎ Community</button>
       <button data-page="discover">⌖ Ontdek</button>
+      <button data-page="myAdventures">⚑ Mijn avonturen</button>
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCount" class="notification-badge hidden"></span>
 </button>
@@ -181,6 +182,7 @@ main{padding:18px 14px 85px}
   <button data-page="home">⌂<br>Home</button>
   <button data-page="community">◎<br>Community</button>
   <button data-page="discover">⌖ Ontdek</button>
+  <button data-page="myAdventures">⚑<br>Avonturen</button>
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
@@ -415,6 +417,7 @@ async function render() {
       page === 'home' ? await home() :
       page === 'community' ? await community() :
       page === 'discover' ? await discover() :
+      page === 'myAdventures' ? await myAdventures() :
       page === 'tripDiscussion' ? await tripDiscussion() :
       page === 'notifications' ? await notifications() :
       page === 'chat' ? await chat() :
@@ -996,6 +999,145 @@ async function discover() {
       `;
     }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
   </div>`;
+}
+
+async function myAdventures() {
+  // Reizen waarin dit lid interesse heeft getoond.
+  const {data: interestRows, error: interestError} = await sb
+    .from('trip_interests')
+    .select('trip_id')
+    .eq('user_id', me.id);
+
+  if (interestError) throw interestError;
+
+  const interestedIds = [...new Set((interestRows || []).map(x => x.trip_id).filter(Boolean))];
+
+  // Reizen waar dit lid zelf een bericht in de reisdiscussie heeft geplaatst.
+  const {data: discussionRows, error: discussionError} = await sb
+    .from('trip_discussions')
+    .select('trip_id,created_at')
+    .eq('user_id', me.id)
+    .order('created_at', {ascending:false});
+
+  if (discussionError) throw discussionError;
+
+  const discussedIds = [...new Set((discussionRows || []).map(x => x.trip_id).filter(Boolean))];
+  const allTripIds = [...new Set([...interestedIds, ...discussedIds])];
+
+  let tripMap = {};
+  if (allTripIds.length) {
+    const {data: tripRows, error: tripsError} = await sb
+      .from('trips')
+      .select('id,title,destination,start_date,end_date,status,image_url')
+      .in('id', allTripIds);
+
+    if (tripsError) throw tripsError;
+    tripMap = Object.fromEntries((tripRows || []).map(t => [t.id, t]));
+  }
+
+  // Groepen waarvan het lid deel uitmaakt.
+  const {data: membershipRows, error: membershipError} = await sb
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', me.id);
+
+  if (membershipError) throw membershipError;
+
+  const groupIds = [...new Set((membershipRows || []).map(x => x.group_id).filter(Boolean))];
+  let groups = [];
+  if (groupIds.length) {
+    const {data: groupRows, error: groupsError} = await sb
+      .from('groups')
+      .select('id,name,description')
+      .in('id', groupIds)
+      .order('name');
+
+    if (groupsError) throw groupsError;
+    groups = groupRows || [];
+  }
+
+  const interestedTrips = interestedIds
+    .map(id => tripMap[id])
+    .filter(t => t && t.status === 'published')
+    .sort((a,b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+
+  const discussedTrips = discussedIds
+    .map(id => tripMap[id])
+    .filter(t => t && t.status === 'published' && !interestedIds.includes(t.id));
+
+  const dateLabel = t => {
+    if (!t.start_date && !t.end_date) return 'Datum volgt';
+    const start = t.start_date
+      ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE')
+      : '';
+    const end = t.end_date
+      ? new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE')
+      : '';
+    return start + (end ? ' – ' + end : '');
+  };
+
+  const tripCard = (t, label, buttonText) => `
+    <article class="card">
+      ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">` : ''}
+      <span class="tag">${esc(label)}</span>
+      <h3>${esc(t.title)}</h3>
+      <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
+      <button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>
+    </article>
+  `;
+
+  return section(
+    'JOUW BASECAMP',
+    'Mijn avonturen',
+    'Alles wat je bij BASECAMP volgt, op één plek.'
+  ) + `
+    <div class="grid">
+      <div class="card">
+        <div class="eyebrow">REISINTERESSES</div>
+        <h3>${interestedTrips.length}</h3>
+        <p class="muted">Reizen die je volgt</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow">CHATGROEPEN</div>
+        <h3>${groups.length}</h3>
+        <p class="muted">Groepen waarvan je lid bent</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow">REISGESPREKKEN</div>
+        <h3>${discussedIds.length}</h3>
+        <p class="muted">Reisdiscussies waarin je zelf iets hebt geplaatst</p>
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      ${section('OP JOUW RADAR','Reizen waarin je interesse hebt','Je kunt hier verder praten over de reizen die je volgt.')}
+      <div class="grid">
+        ${interestedTrips.map(t => tripCard(t, 'Je hebt interesse', 'Open reisgesprek →')).join('') ||
+          '<div class="card"><p class="muted">Je hebt nog geen interesse getoond in een reis.</p><button class="btn" onclick="go(&#39;discover&#39;)">Ontdek reizen</button></div>'}
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      ${section('JOUW BIJDRAGEN','Reisgesprekken','Reizen waarover je zelf al een vraag of bericht hebt geplaatst.')}
+      <div class="grid">
+        ${discussedTrips.map(t => tripCard(t, 'Je nam deel aan het gesprek', 'Verder praten →')).join('') ||
+          '<div class="card"><p class="muted">Je hebt nog geen berichten geplaatst in reisgesprekken.</p><button class="btn light" onclick="go(&#39;discover&#39;)">Bekijk de reizen</button></div>'}
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      ${section('SAMEN OP PAD','Mijn chatgroepen','De groepen waar je deel van uitmaakt.')}
+      <div class="card">
+        ${groups.map(g => `
+          <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)">
+            <div><b>${esc(g.name)}</b><div class="muted">${esc(g.description || '')}</div></div>
+            <button class="btn light" onclick="room='${g.id}';go('chat')">Open chat</button>
+          </div>
+        `).join('') || '<p class="muted">Je bent nog geen lid van een chatgroep.</p>'}
+        <button class="btn light" style="margin-top:12px" onclick="go('chat')">Bekijk alle chatgroepen</button>
+      </div>
+    </div>
+  `;
 }
 
 async function toggleTripInterest(tripId, interested) {
