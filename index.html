@@ -1726,7 +1726,7 @@ async function chat() {
               })}
             </small><br>
             ${esc(m.content)}
-            ${m.user_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}
+            ${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}
           </div>
         `).join('')}
       </div>
@@ -1765,6 +1765,29 @@ async function chat() {
   return html;
 }
 
+async function createChatGroup() {
+  const name = $('newGroupName')?.value.trim();
+  const description = $('newGroupDescription')?.value.trim() || null;
+  if (!name) { alert('Vul eerst een naam voor de chatgroep in.'); return; }
+  const {error} = await sb.from('groups').insert({name,description});
+  if (error) { alert('Chatgroep aanmaken lukte niet: ' + error.message); return; }
+  alert('De chatgroep is aangemaakt.');
+  await render();
+}
+
+async function deleteChatGroup(groupId) {
+  if (!confirm('Wil je deze chatgroep verwijderen? Alle berichten en lidmaatschappen in deze groep worden ook verwijderd.')) return;
+  let result = await sb.from('messages').delete().eq('group_id',groupId);
+  if (result.error) { alert('Berichten verwijderen lukte niet: ' + result.error.message); return; }
+  result = await sb.from('group_members').delete().eq('group_id',groupId);
+  if (result.error) { alert('Lidmaatschappen verwijderen lukte niet: ' + result.error.message); return; }
+  result = await sb.from('groups').delete().eq('id',groupId);
+  if (result.error) { alert('Chatgroep verwijderen lukte niet: ' + result.error.message); return; }
+  if (room === groupId) room = null;
+  alert('De chatgroep is verwijderd.');
+  await render();
+}
+
 async function selectRoom(id) {
   room = id;
   await render();
@@ -1786,9 +1809,9 @@ async function joinGroup(group_id) {
 async function deleteChatMessage(message_id) {
   if (!confirm('Wil je dit chatbericht definitief verwijderen?')) return;
 
-  const {error} = await sb.from('messages').delete()
-    .eq('id', message_id)
-    .eq('user_id', me.id);
+  let query = sb.from('messages').delete().eq('id', message_id);
+  if (!['admin','moderator'].includes(me.role)) query = query.eq('user_id', me.id);
+  const {error} = await query;
 
   if (error) {
     alert('Chatbericht verwijderen lukte niet: ' + error.message);
@@ -1953,7 +1976,7 @@ async function saveProfile() {
 function adminMenu(active) {
   const items = [
     ['overview','▦','Overzicht'],['activity','◷','Activiteit'],['members','♙','Leden'],['trips','⌖','Reizen'],
-    ['community','◎','Community'],['admins','⚙','Beheerders']
+    ['community','◎','Community'],['chatgroups','☏','Chatgroepen'],['admins','⚙','Beheerders']
   ];
   return `<div class="row" style="gap:7px;flex-wrap:wrap;margin:16px 0 20px">
     ${items.map(([key,icon,label]) => `<button class="btn ${active===key?'':'light'}" onclick="setAdminSection('${key}')">${icon} ${label}</button>`).join('')}
@@ -2056,6 +2079,24 @@ async function admin() {
       <p class="muted">${count} resultaten · maximaal 50 leden per pagina${me.role==='admin'?' · zoeken op naam en e-mailadres':''}</p>
       ${(members||[]).map(u=>`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Avonturier')}</b><div class="muted">${me.role==='admin' && u.email?esc(u.email)+' · ':''}${u.role==='admin'?'Beheerder':u.role==='moderator'?'Moderator':'Lid'} · ${esc(u.status||'')}</div></div><button class="btn light" onclick="openMemberProfile('${u.id}')">Profiel bekijken</button></div>`).join('')||'<p class="muted">Geen leden gevonden.</p>'}
       <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn light" ${adminMemberPage===0?'disabled':''} onclick="changeAdminMemberPage(-1)">← Vorige</button><span class="muted">Pagina ${adminMemberPage+1}</span><button class="btn light" ${((adminMemberPage+1)*50)>=count?'disabled':''} onclick="changeAdminMemberPage(1)">Volgende →</button></div></div>`;
+  }
+
+  if (adminSection === 'chatgroups') {
+    const {data:groups,error} = await sb.from('groups').select('id,name,description,created_at').order('name');
+    if (error) throw error;
+    const {data:counts,error:countError} = await sb.from('group_members').select('group_id');
+    if (countError) throw countError;
+    const memberCounts = {};
+    (counts || []).forEach(x => { memberCounts[x.group_id] = (memberCounts[x.group_id] || 0) + 1; });
+    return header + `<div class="card"><h3>Nieuwe chatgroep</h3>
+      <p class="muted">Maak een nieuwe plek waar leden rond een onderwerp kunnen praten.</p>
+      <label for="newGroupName">Naam van de groep</label><input id="newGroupName" maxlength="80" placeholder="Bijv. Packraften in Scandinavië">
+      <label for="newGroupDescription" style="display:block;margin-top:10px">Korte beschrijving</label><textarea id="newGroupDescription" maxlength="300" rows="3" placeholder="Waarover gaat deze groep?"></textarea>
+      <button class="btn" style="margin-top:10px" onclick="createChatGroup()">Chatgroep aanmaken</button>
+    </div>
+    <div class="card"><h3>Bestaande chatgroepen (${groups.length})</h3>
+      ${(groups || []).map(g => `<div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${esc(g.name)}</b><div class="muted">${esc(g.description || 'Geen beschrijving')} · ${(memberCounts[g.id] || 0)} leden</div></div><button class="btn light" onclick="deleteChatGroup('${g.id}')">Groep verwijderen</button></div>`).join('') || '<p class="muted">Er zijn nog geen chatgroepen.</p>'}
+    </div>`;
   }
 
   if (adminSection === 'admins') {
