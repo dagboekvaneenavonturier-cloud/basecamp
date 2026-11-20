@@ -66,6 +66,7 @@ textarea{min-height:80px}
 .tabs button.active{background:var(--g);color:white}
 .mobile{display:none}
 .avatar{background:#e9dfc9;color:var(--g);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;font-weight:800;overflow:hidden;flex:0 0 auto}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.profile-avatar{width:92px;height:92px;font-size:25px;margin-bottom:14px}
+.profile-identity{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}.profile-identity .avatar,.profile-member-link .avatar{width:30px;height:30px;font-size:12px;margin:0}.profile-member-link{display:inline-flex;align-items:center;gap:7px}
 .footer{text-align:center;padding:20px;color:#8b9489;font-size:10px}
 .status{padding:15px;border-radius:10px;background:#edf0e9;margin:12px 0}
 .error{background:#f8e5e1;color:#8a3025}
@@ -468,18 +469,24 @@ async function profilesFor(ids) {
 
   const {data, error} = await sb
     .from('profiles')
-    .select('id,display_name')
+    .select('id,display_name,avatar_url')
     .in('id', uniqueIds);
 
   if (error) throw error;
 
   return Object.fromEntries(
-    (data || []).map(p => [p.id, p.display_name])
+    (data || []).map(p => [p.id, p])
   );
 }
 
-function memberLink(userId, displayName) {
-  return `<button class="btn light" style="padding:5px 9px;margin:3px" onclick="openMemberProfile('${userId}')">${esc(displayName || 'Avonturier')}</button>`;
+function profileIdentity(person, userId, compact = false) {
+  const name = person?.display_name || 'Avonturier';
+  return `<span class="profile-identity">${avatarMarkup(person?.avatar_url, name)}<span>${esc(name)}</span></span>`;
+}
+
+function memberLink(userId, person) {
+  const name = person?.display_name || 'Avonturier';
+  return `<button class="btn light profile-member-link" onclick="openMemberProfile('${userId}')">${avatarMarkup(person?.avatar_url, name)}<span>${esc(name)}</span></button>`;
 }
 
 function localDateISO() {
@@ -584,9 +591,12 @@ async function postsHtml() {
 
     return `<article class="post">
       <div class="feedtop">
-        <b>${esc(names[p.user_id] || 'Avonturier')}</b>
+        ${profileIdentity(names[p.user_id], p.user_id)}
         · ${new Date(p.created_at).toLocaleString('nl-BE')}
       </div>
+      ${p.user_id === me.id ? `
+        <button class="btn light" onclick="deleteCommunityPost('${p.id}')">Mijn bericht verwijderen</button>
+      ` : ''}
 
       ${p.content ? `<p>${esc(p.content)}</p>` : ''}
 
@@ -609,7 +619,7 @@ async function postsHtml() {
 
       ${postComments.map(c => `
         <p class="muted">
-          <b>${esc(commentNames[c.user_id] || 'Avonturier')}:</b>
+          ${profileIdentity(commentNames[c.user_id], c.user_id)}:
           ${esc(c.content)}
         </p>
       `).join('')}
@@ -899,7 +909,7 @@ async function home() {
       ${(posts || []).map(p => `
         <article class="post">
           <div class="feedtop">
-            <b>${esc(names[p.user_id] || 'Avonturier')}</b>
+            ${profileIdentity(names[p.user_id], p.user_id)}
             · ${new Date(p.created_at).toLocaleDateString('nl-BE')}
           </div>
           ${p.content ? `<p>${esc(p.content)}</p>` : ''}
@@ -946,6 +956,20 @@ async function community() {
     'De community',
     'Deel je plannen, stel vragen en inspireer andere avonturiers.'
   ) + composer() + await postsHtml();
+}
+
+async function deleteCommunityPost(post_id) {
+  if (!confirm('Wil je dit communitybericht definitief verwijderen?')) return;
+
+  const {error} = await sb.from('posts').delete()
+    .eq('id', post_id)
+    .eq('user_id', me.id);
+
+  if (error) {
+    alert('Bericht verwijderen lukte niet: ' + error.message);
+  } else {
+    await render();
+  }
 }
 
 async function toggleLike(post_id, liked) {
@@ -1278,7 +1302,7 @@ async function tripDiscussion() {
       ${(messages || []).map(m => `
         <article style="border-bottom:1px solid var(--line);padding:10px 0">
           <div class="feedtop">
-            <b>${esc(names[m.user_id] || 'Avonturier')}</b>
+            ${profileIdentity(names[m.user_id], m.user_id)}
             · ${new Date(m.created_at).toLocaleString('nl-BE')}
           </div>
           <p style="white-space:pre-wrap">${esc(m.content)}</p>
@@ -1389,7 +1413,7 @@ async function notifications() {
           return `
             <article style="border-bottom:1px solid var(--line);padding:12px 0">
               <div class="feedtop">
-                <b>${esc(names[message.user_id] || 'Avonturier')}</b>
+                ${profileIdentity(names[message.user_id], message.user_id)}
                 <span class="badge">Nieuw</span>
               </div>
               <p><b>${esc(trip.title)}</b></p>
@@ -1446,7 +1470,7 @@ async function notifications() {
           return `
             <article style="border-bottom:1px solid var(--line);padding:12px 0">
               <div class="feedtop">
-                <b>${esc(names[comment.user_id] || 'Avonturier')}</b>
+                ${profileIdentity(names[comment.user_id], comment.user_id)}
                 <span class="badge">Nieuw</span>
               </div>
               <p>Reageerde op jouw bericht:</p>
@@ -1504,7 +1528,7 @@ async function notifications() {
           return `
             <article style="border-bottom:1px solid var(--line);padding:12px 0">
               <div class="feedtop">
-                <b>${esc(names[message.user_id] || 'Avonturier')}</b>
+                ${profileIdentity(names[message.user_id], message.user_id)}
                 <span class="badge">Nieuw bericht</span>
               </div>
               <p><b>${esc(group.name)}</b></p>
@@ -1666,7 +1690,7 @@ async function chat() {
       <div class="msgs" id="msgs">
         ${(messages || []).map(m => `
           <div class="bubble ${m.user_id === me.id ? 'mine' : ''}">
-            <b>${esc(names[m.user_id] || 'Avonturier')}</b><br>
+            ${profileIdentity(names[m.user_id], m.user_id)}<br>
             <small class="muted">
               ${new Date(m.created_at).toLocaleString('nl-BE',{
                 day:'2-digit',
@@ -1676,6 +1700,7 @@ async function chat() {
               })}
             </small><br>
             ${esc(m.content)}
+            ${m.user_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}
           </div>
         `).join('')}
       </div>
@@ -1727,6 +1752,20 @@ async function joinGroup(group_id) {
 
   if (error && error.code !== '23505') {
     alert(error.message);
+  } else {
+    await render();
+  }
+}
+
+async function deleteChatMessage(message_id) {
+  if (!confirm('Wil je dit chatbericht definitief verwijderen?')) return;
+
+  const {error} = await sb.from('messages').delete()
+    .eq('id', message_id)
+    .eq('user_id', me.id);
+
+  if (error) {
+    alert('Chatbericht verwijderen lukte niet: ' + error.message);
   } else {
     await render();
   }
