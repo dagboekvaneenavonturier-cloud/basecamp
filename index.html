@@ -207,6 +207,7 @@ let session = null;
 let me = null;
 let page = 'home';
 let room = null;
+let chatCategory = 'regular';
 let chatChannel = null;
 let selectedTripId = null;
 let selectedProfileId = null;
@@ -1672,8 +1673,17 @@ async function chat() {
     return section('PRAAT MEE','Groepen','Er zijn nog geen groepen aangemaakt.');
   }
 
-  if (!room || !groups.some(g => g.id === room)) {
-    room = groups[0].id;
+  const regularGroups = groups.filter(g => !g.is_private);
+  const privateGroups = groups.filter(g => g.is_private);
+  let visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
+
+  // Kies automatisch een beschikbare categorie als de huidige leeg is.
+  if (!visibleGroups.length && groups.length) {
+    chatCategory = chatCategory === 'private' ? 'regular' : 'private';
+    visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
+  }
+  if (!room || !visibleGroups.some(g => g.id === room)) {
+    room = visibleGroups[0]?.id || null;
   }
 
   const {data:members} = await sb.from('group_members')
@@ -1683,35 +1693,46 @@ async function chat() {
   const joined = new Set((members || []).map(m => m.group_id));
   const group = groups.find(x => x.id === room);
 
-  const {data:messages,error:messageError} = await sb.from('messages')
-    .select('id,user_id,content,created_at')
-    .eq('group_id',room)
-    .order('created_at')
-    .limit(100);
+  let messages = [];
+  if (group) {
+    const {data:messageRows,error:messageError} = await sb.from('messages')
+      .select('id,user_id,content,created_at')
+      .eq('group_id',room)
+      .order('created_at')
+      .limit(100);
+    if (messageError) throw messageError;
+    messages = messageRows || [];
+  }
 
-  if (messageError) throw messageError;
-
-  const names = await profilesFor((messages || []).map(m => m.user_id));
-  const member = joined.has(room);
+  const names = await profilesFor(messages.map(m => m.user_id));
+  const member = room ? joined.has(room) : false;
 
   const html = section(
     'PRAAT MEE',
     'Groepen & chat',
     'Kies een onderwerp en praat mee met andere avonturiers.'
-  ) + `<div class="chat">
+  ) + `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
+    <button class="${chatCategory === 'regular' ? 'active' : ''}" onclick="setChatCategory('regular')">
+      Gewone chats <span class="tag">${regularGroups.length}</span>
+    </button>
+    <button class="${chatCategory === 'private' ? 'active' : ''}" onclick="setChatCategory('private')">
+      🔒 Privéreischats <span class="tag">${privateGroups.length}</span>
+    </button>
+  </div>
+  <div class="chat">
     <div class="rooms">
-      ${groups.map(g => `
+      ${visibleGroups.map(g => `
         <button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')">
           <b>${esc(g.name)}</b><br>
           <small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small>
         </button>
-      `).join('')}
+      `).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}
     </div>
 
     <div class="chatmain">
-      <div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">
+      ${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">
         ${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}
-      </div>
+      </div>` : '<div style="padding:20px" class="muted">Selecteer een chat zodra er een groep beschikbaar is.</div>'}
 
       <div class="msgs" id="msgs">
         ${(messages || []).map(m => `
@@ -1731,17 +1752,17 @@ async function chat() {
         `).join('')}
       </div>
 
-      ${member || ['admin','moderator'].includes(me.role)
+      ${group && (member || ['admin','moderator'].includes(me.role))
         ? `<div class="send">
             <input id="chatText" placeholder="Schrijf een bericht..."
               onkeydown="if(event.key==='Enter')sendMessage()">
             <button class="btn" onclick="sendMessage()">Verstuur</button>
           </div>`
-        : `<div class="send">
+        : group ? `<div class="send">
             <button class="btn" onclick="joinGroup('${room}')">
               Aansluiten bij deze groep
             </button>
-          </div>`
+          </div>` : ''
       }
     </div>
   </div>`;
@@ -1787,6 +1808,12 @@ async function deleteChatGroup(groupId) {
   if (result.error) { alert('Chatgroep verwijderen lukte niet: ' + result.error.message); return; }
   if (room === groupId) room = null;
   alert('De chatgroep is verwijderd.');
+  await render();
+}
+
+async function setChatCategory(category) {
+  chatCategory = category;
+  room = null;
   await render();
 }
 
