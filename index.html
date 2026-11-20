@@ -618,10 +618,15 @@ async function postsHtml() {
       </button>
 
       ${postComments.map(c => `
-        <p class="muted">
+        <div class="muted" style="margin:8px 0;padding:8px 10px;border-left:2px solid #d8c9a5">
           ${profileIdentity(commentNames[c.user_id], c.user_id)}:
           ${esc(c.content)}
-        </p>
+          ${c.user_id === me.id ? `
+            <div style="margin-top:5px">
+              <button class="btn light" onclick="deleteCommunityComment('${c.id}')">Mijn reactie verwijderen</button>
+            </div>
+          ` : ''}
+        </div>
       `).join('')}
     </article>`;
   }).join('');
@@ -967,6 +972,20 @@ async function deleteCommunityPost(post_id) {
 
   if (error) {
     alert('Bericht verwijderen lukte niet: ' + error.message);
+  } else {
+    await render();
+  }
+}
+
+async function deleteCommunityComment(comment_id) {
+  if (!confirm('Wil je deze reactie definitief verwijderen?')) return;
+
+  const {error} = await sb.from('comments').delete()
+    .eq('id', comment_id)
+    .eq('user_id', me.id);
+
+  if (error) {
+    alert('Reactie verwijderen lukte niet: ' + error.message);
   } else {
     await render();
   }
