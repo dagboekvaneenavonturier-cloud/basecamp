@@ -208,6 +208,7 @@ let page = 'home';
 let room = null;
 let chatChannel = null;
 let selectedTripId = null;
+let selectedProfileId = null;
 let notificationRefreshTimer = null;
 const $ = id => document.getElementById(id);
 
@@ -421,7 +422,8 @@ async function render() {
       page === 'tripDiscussion' ? await tripDiscussion() :
       page === 'notifications' ? await notifications() :
       page === 'chat' ? await chat() :
-      page === 'profile' ? profile() :
+      page === 'profile' ? await profile() :
+      page === 'memberProfile' ? await memberProfile() :
       page === 'admin' ? await admin() :
       'Niet gevonden.';
 
@@ -474,6 +476,20 @@ async function profilesFor(ids) {
   return Object.fromEntries(
     (data || []).map(p => [p.id, p.display_name])
   );
+}
+
+function memberLink(userId, displayName) {
+  return `<button class="btn light" style="padding:5px 9px;margin:3px" onclick="openMemberProfile('${userId}')">${esc(displayName || 'Avonturier')}</button>`;
+}
+
+function patchesHtml(rows, compact = false) {
+  if (!rows || !rows.length) return '<p class="muted">Je hebt nog geen avonturenpatches verzameld. Na een reis verschijnen ze hier.</p>';
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(135px,1fr))">${rows.map(row => `
+    <div class="card" style="text-align:center;padding:10px;margin:4px">
+      ${row.patch_image_url ? `<img src="${esc(row.patch_image_url)}" alt="Patch ${esc(row.title)}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:contain">` : '<div class="tag">AVONTURENPATCH</div>'}
+      <b style="display:block;margin-top:7px">${esc(row.title)}</b>
+      <div class="muted">${esc(row.destination || '')}</div>
+    </div>`).join('')}</div>`;
 }
 
 async function updateNotificationBadge() {
@@ -961,6 +977,18 @@ async function discover() {
 
   if (interestError) throw interestError;
 
+  const {data:participantRows,error:participantError} = await sb
+    .from('trip_participants')
+    .select('trip_id,user_id')
+    .in('trip_id',(trips || []).map(t => t.id));
+
+  if (participantError) throw participantError;
+
+  const memberNames = await profilesFor([
+    ...(interests || []).map(x => x.user_id),
+    ...(participantRows || []).map(x => x.user_id)
+  ]);
+
   const myInterests = new Set(
     (interests || [])
       .filter(i => i.user_id === me.id)
@@ -995,6 +1023,13 @@ async function discover() {
   onclick="openTripDiscussion('${t.id}')">
   Vragen & gesprek →
 </button>
+          <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+            <b>Wie gaat er mee?</b>
+            <div class="muted" style="margin:5px 0">${(participantRows || []).filter(x => x.trip_id === t.id).length} bevestigde deelnemers</div>
+            ${(participantRows || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('') || '<p class="muted">De deelnemers worden bekendgemaakt zodra ze bevestigd zijn.</p>'}
+            <div class="muted" style="margin-top:8px">${(interests || []).filter(x => x.trip_id === t.id).length} leden hebben interesse</div>
+            ${(interests || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('')}
+          </div>
         </div>
       `;
     }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
@@ -1012,6 +1047,13 @@ async function myAdventures() {
 
   const interestedIds = [...new Set((interestRows || []).map(x => x.trip_id).filter(Boolean))];
 
+  const {data:myParticipantRows,error:myParticipantError} = await sb
+    .from('trip_participants')
+    .select('trip_id')
+    .eq('user_id',me.id);
+  if (myParticipantError) throw myParticipantError;
+  const participatedIds = [...new Set((myParticipantRows || []).map(x => x.trip_id).filter(Boolean))];
+
   // Reizen waar dit lid zelf een bericht in de reisdiscussie heeft geplaatst.
   const {data: discussionRows, error: discussionError} = await sb
     .from('trip_discussions')
@@ -1022,13 +1064,13 @@ async function myAdventures() {
   if (discussionError) throw discussionError;
 
   const discussedIds = [...new Set((discussionRows || []).map(x => x.trip_id).filter(Boolean))];
-  const allTripIds = [...new Set([...interestedIds, ...discussedIds])];
+  const allTripIds = [...new Set([...interestedIds, ...discussedIds, ...participatedIds])];
 
   let tripMap = {};
   if (allTripIds.length) {
     const {data: tripRows, error: tripsError} = await sb
       .from('trips')
-      .select('id,title,destination,start_date,end_date,status,image_url')
+      .select('id,title,destination,start_date,end_date,status,image_url,patch_image_url')
       .in('id', allTripIds);
 
     if (tripsError) throw tripsError;
@@ -1065,6 +1107,10 @@ async function myAdventures() {
     .map(id => tripMap[id])
     .filter(t => t && t.status === 'published' && !interestedIds.includes(t.id));
 
+  const participatedTrips = participatedIds
+    .map(id => tripMap[id])
+    .filter(Boolean);
+
   const dateLabel = t => {
     if (!t.start_date && !t.end_date) return 'Datum volgt';
     const start = t.start_date
@@ -1098,6 +1144,11 @@ async function myAdventures() {
         <p class="muted">Reizen die je volgt</p>
       </div>
       <div class="card">
+        <div class="eyebrow">MEE OP AVONTUUR</div>
+        <h3>${participatedTrips.length}</h3>
+        <p class="muted">Reizen waaraan je deelnam</p>
+      </div>
+      <div class="card">
         <div class="eyebrow">CHATGROEPEN</div>
         <h3>${groups.length}</h3>
         <p class="muted">Groepen waarvan je lid bent</p>
@@ -1107,6 +1158,11 @@ async function myAdventures() {
         <h3>${discussedIds.length}</h3>
         <p class="muted">Reisdiscussies waarin je zelf iets hebt geplaatst</p>
       </div>
+    </div>
+
+    <div style="margin-top:24px">
+      ${section('JOUW VERZAMELING','Avonturenpatches',`${participatedTrips.length} ${participatedTrips.length === 1 ? 'avontuur' : 'avonturen'} beleefd`)}
+      <div class="card">${patchesHtml(participatedTrips)}</div>
     </div>
 
     <div style="margin-top:24px">
@@ -1683,29 +1739,65 @@ async function sendMessage() {
 
 /* PROFIEL */
 
-function profile() {
-  return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan.')
+async function profile() {
+  const {data:participantRows,error} = await sb.from('trip_participants')
+    .select('trip_id').eq('user_id',me.id);
+  if (error) throw error;
+  const ids = [...new Set((participantRows || []).map(x => x.trip_id))];
+  let patches = [];
+  if (ids.length) {
+    const {data,error:tripError} = await sb.from('trips')
+      .select('id,title,destination,patch_image_url').in('id',ids);
+    if (tripError) throw tripError;
+    patches = data || [];
+  }
+
+  return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.')
     + `<div class="card">
       <div class="avatar">${initials(me.display_name)}</div>
-
-      <div class="field">
-        <label for="pname">Naam</label>
-        <input id="pname" value="${esc(me.display_name || '')}">
-      </div>
-
-      <div class="field">
-        <label for="pbio">Over mij</label>
-        <textarea id="pbio">${esc(me.bio || '')}</textarea>
-      </div>
-
-      <div class="field">
-        <label>E-mailadres</label>
-        <input value="${esc(me.email)}" disabled>
-      </div>
-
+      <div class="field"><label for="pname">Naam</label><input id="pname" value="${esc(me.display_name || '')}"></div>
+      <div class="field"><label for="pbio">Over mij</label><textarea id="pbio">${esc(me.bio || '')}</textarea></div>
+      <div class="field"><label>E-mailadres</label><input value="${esc(me.email)}" disabled></div>
       <button class="btn" onclick="saveProfile()">Profiel bewaren</button>
       <p class="muted">Accountstatus: goedgekeurd</p>
+    </div>
+    <div style="margin-top:22px">${section('MIJN VERZAMELING','Mijn avonturenpatches','Een tastbare herinnering aan elke reis die je met Dagboek van een Avonturier hebt beleefd.')}
+      <div class="card">${patchesHtml(patches)}</div>
     </div>`;
+}
+
+async function openMemberProfile(userId) {
+  selectedProfileId = userId;
+  await go('memberProfile');
+}
+
+async function memberProfile() {
+  if (!selectedProfileId) return 'Geen profiel geselecteerd.';
+  const {data:person,error} = await sb.from('profiles')
+    .select('id,display_name,bio,avatar_url').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
+  if (error) throw error;
+  if (!person) return 'Dit profiel is niet beschikbaar.';
+
+  const {data:rows,error:participantError} = await sb.from('trip_participants')
+    .select('trip_id').eq('user_id',selectedProfileId);
+  if (participantError) throw participantError;
+  const ids = [...new Set((rows || []).map(x => x.trip_id))];
+  let patches = [];
+  if (ids.length) {
+    const {data,error:tripError} = await sb.from('trips')
+      .select('id,title,destination,patch_image_url').in('id',ids);
+    if (tripError) throw tripError;
+    patches = data || [];
+  }
+
+  return section('AVONTURIER','Maak kennis','Ontdek welke avonturen deze BASECAMP-avonturier al heeft beleefd.')
+    + `<button class="btn light" onclick="go('discover')">← Terug</button>
+      <div class="card"><div class="avatar">${initials(person.display_name)}</div>
+      <h3>${esc(person.display_name || 'Avonturier')}</h3>
+      <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
+      <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
+      <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
+      <div class="card">${patchesHtml(patches)}</div></div>`;
 }
 
 async function saveProfile() {
@@ -1744,8 +1836,8 @@ async function admin() {
   if (error) throw error;
 
   const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination,status')
-    .eq('status','published')
+    .select('id,title,destination,status,patch_image_url')
+    .in('status',['published','completed'])
     .order('start_date');
 
   if (tripError) throw tripError;
@@ -1756,9 +1848,18 @@ async function admin() {
 
   if (interestError) throw interestError;
 
-  const names = await profilesFor(
-    (interests || []).map(i => i.user_id)
-  );
+  const {data:participants,error:participantError} = await sb.from('trip_participants')
+    .select('id,trip_id,user_id,confirmed_at');
+  if (participantError) throw participantError;
+
+  const {data:approvedMembers,error:membersError} = await sb.from('profiles')
+    .select('id,display_name').eq('status','approved').order('display_name');
+  if (membersError) throw membersError;
+
+  const names = await profilesFor([
+    ...(interests || []).map(i => i.user_id),
+    ...(participants || []).map(i => i.user_id)
+  ]);
 
   return section('TEAM BASECAMP','Beheer','Beheer leden, reizen en interesse van avonturiers.')
     + `<div class="card">
@@ -1786,8 +1887,22 @@ async function admin() {
             <b>${esc(t.title)}</b>
             <span class="tag">${people.length} geïnteresseerden</span>
             ${people.length
-              ? `<p class="muted">${people.map(i => esc(names[i.user_id] || 'Avonturier')).join(', ')}</p>`
+              ? `<p>${people.map(i => memberLink(i.user_id, names[i.user_id])).join('')}</p>`
               : '<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+            <div style="margin-top:12px;padding:12px;background:#f7f6f1;border-radius:9px">
+              <b>Bevestigde deelnemers & patches</b>
+              <div class="muted" style="margin:5px 0">${(participants || []).filter(x => x.trip_id === t.id).length} deelnemers bevestigd</div>
+              ${(participants || []).filter(x => x.trip_id === t.id).map(x => `<div class="row" style="padding:5px 0">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('') || '<p class="muted">Nog geen deelnemers bevestigd.</p>'}
+              <div class="field"><label for="participant-${t.id}">Deelnemer bevestigen</label>
+                <select id="participant-${t.id}"><option value="">Kies een lid...</option>${(approvedMembers || []).map(u => `<option value="${u.id}">${esc(u.display_name || 'Avonturier')}</option>`).join('')}</select>
+              </div>
+              <button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
+              <div class="field" style="margin-top:12px"><label>Patchafbeelding voor deze reis</label>
+                ${t.patch_image_url ? `<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:110px;height:110px;object-fit:contain;display:block;margin:6px 0">` : '<p class="muted">Nog geen patch toegevoegd.</p>'}
+                <input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp">
+                <button class="btn light" style="margin-top:7px" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button>
+              </div>
+            </div>
             <button class="btn light" onclick="archiveTrip('${t.id}')">
               Verwijderen uit aanbod
             </button>
@@ -1884,6 +1999,43 @@ async function addTrip() {
   else await render();
 }
 
+
+async function confirmTripParticipant(tripId) {
+  if (!['admin','moderator'].includes(me.role)) return alert('Geen toegang.');
+  const select = $('participant-' + tripId);
+  const userId = select && select.value;
+  if (!userId) return alert('Kies eerst een lid.');
+  const {error} = await sb.from('trip_participants').insert({trip_id:tripId,user_id:userId,confirmed_by:me.id});
+  if (error) return alert('Deelname bevestigen mislukt: ' + error.message);
+  alert('Deelname bevestigd. De patch verschijnt op het profiel zodra er een patchafbeelding is toegevoegd.');
+  await render();
+}
+
+async function removeTripParticipant(participantId) {
+  if (!['admin','moderator'].includes(me.role)) return alert('Geen toegang.');
+  if (!confirm('Wil je deze bevestigde deelname verwijderen? De patch verdwijnt dan ook van het profiel.')) return;
+  const {error} = await sb.from('trip_participants').delete().eq('id',participantId);
+  if (error) return alert('Deelname verwijderen mislukt: ' + error.message);
+  await render();
+}
+
+async function uploadTripPatch(tripId) {
+  if (!['admin','moderator'].includes(me.role)) return alert('Geen toegang.');
+  const input = $('patch-' + tripId);
+  const file = input && input.files[0];
+  if (!file) return alert('Kies eerst een patchafbeelding.');
+  if (!['image/png','image/jpeg','image/webp'].includes(file.type)) return alert('Gebruik een PNG-, JPG- of WEBP-afbeelding.');
+  if (file.size > 5 * 1024 * 1024) return alert('De patchafbeelding mag maximaal 5 MB groot zijn.');
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  const path = me.id + '/patches/' + tripId + '-' + Date.now() + '.' + ext;
+  const {error:uploadError} = await sb.storage.from('post-images').upload(path,file);
+  if (uploadError) return alert('Patch uploaden mislukt: ' + uploadError.message);
+  const url = sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+  const {error} = await sb.from('trips').update({patch_image_url:url}).eq('id',tripId);
+  if (error) return alert('Patch opslaan mislukt: ' + error.message);
+  alert('Patch toegevoegd aan deze reis.');
+  await render();
+}
 
 async function archiveTrip(tripId) {
   if (!['admin','moderator'].includes(me.role)) {
