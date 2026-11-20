@@ -1745,12 +1745,12 @@ async function tripAlbum() {
         const photoComments = comments.filter(x => x.photo_id === photo.id);
         return `<div class="card">
           ${signed[photo.id] ? `<img src="${esc(signed[photo.id])}" alt="Reisfoto" loading="lazy" style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;background:#eee">` : '<p class="muted">Foto kon niet geladen worden.</p>'}
-          <p class="muted">Door ${esc(names[photo.user_id] || 'Avonturier')} · ${new Date(photo.created_at).toLocaleDateString('nl-BE')}</p>
+          <p class="muted">Door ${esc(names[photo.user_id]?.display_name || 'Avonturier')} · ${new Date(photo.created_at).toLocaleDateString('nl-BE')}</p>
           ${photo.caption ? `<p>${esc(photo.caption)}</p>` : ''}
           <button class="btn light" onclick="toggleTripPhotoLike('${photo.id}',${mine})">${mine ? '♥' : '♡'} ${likes.filter(x => x.photo_id === photo.id).length} likes</button>
           ${(photo.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<button class="btn danger" onclick="deleteTripPhoto('${photo.id}','${esc(photo.storage_path)}')">Verwijderen</button>` : ''}
           <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><b>Reacties (${photoComments.length})</b>
-            ${photoComments.map(c => `<p><b>${esc(names[c.user_id] || 'Avonturier')}:</b> ${esc(c.content)} ${c.user_id === me.id || ['admin','moderator'].includes(me.role) ? `<button class="btn light" style="padding:3px 7px" onclick="deleteTripPhotoComment('${c.id}')">×</button>` : ''}</p>`).join('')}
+            ${photoComments.map(c => `<p><b>${esc(names[c.user_id]?.display_name || 'Avonturier')}:</b> ${esc(c.content)} ${c.user_id === me.id || ['admin','moderator'].includes(me.role) ? `<button class="btn light" style="padding:3px 7px" onclick="deleteTripPhotoComment('${c.id}')">×</button>` : ''}</p>`).join('')}
             <div style="display:flex;gap:6px;margin-top:8px"><input id="photoComment-${photo.id}" placeholder="Schrijf een reactie…"><button class="btn" onclick="addTripPhotoComment('${photo.id}')">Plaats</button></div>
           </div>
         </div>`;
