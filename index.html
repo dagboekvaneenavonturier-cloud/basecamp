@@ -1710,7 +1710,6 @@ async function tripAlbum() {
     .eq('trip_id',selectedArchiveTripId).order('created_at',{ascending:false});
   if (error) throw error;
   const photoRows = photos || [];
-  const names = await profilesFor([...photoRows.map(x => x.user_id), ...((comments || []).map(x => x.user_id))]);
   const photoIds = photoRows.map(x => x.id);
   let likes = [], comments = [];
   if (photoIds.length) {
@@ -1722,6 +1721,10 @@ async function tripAlbum() {
     if (cr.error) throw cr.error;
     likes = lr.data || []; comments = cr.data || [];
   }
+  const names = await profilesFor([
+    ...photoRows.map(x => x.user_id),
+    ...comments.map(x => x.user_id)
+  ]);
   const signed = {};
   for (const photo of photoRows) {
     const {data,error:signedError} = await sb.storage.from('reisarchief').createSignedUrl(photo.storage_path,3600);
