@@ -999,6 +999,92 @@ async function tripDiscussion() {
   `;
 }
 
+async function notifications() {
+  const {data: items, error} = await sb
+    .from('trip_discussion_notifications')
+    .select('id,trip_id,discussion_id,created_at,read_at')
+    .eq('recipient_id', me.id)
+    .order('created_at', {ascending: false});
+
+  if (error) throw error;
+
+  if (!items || items.length === 0) {
+    return section(
+      'BASECAMP',
+      'Meldingen',
+      'Hier verschijnen nieuwe reacties op reisgesprekken.'
+    ) + `
+      <div class="card">
+        <p class="muted">Je hebt momenteel nog geen meldingen.</p>
+      </div>
+    `;
+  }
+
+  const tripIds = [...new Set(items.map(n => n.trip_id))];
+  const discussionIds = items.map(n => n.discussion_id);
+
+  const [{data: trips, error: tripsError}, {data: messages, error: messagesError}] =
+    await Promise.all([
+      sb.from('trips').select('id,title').in('id', tripIds),
+      sb.from('trip_discussions')
+        .select('id,content,user_id')
+        .in('id', discussionIds)
+    ]);
+
+  if (tripsError) throw tripsError;
+  if (messagesError) throw messagesError;
+
+  const tripMap = Object.fromEntries((trips || []).map(t => [t.id, t]));
+  const messageMap = Object.fromEntries((messages || []).map(m => [m.id, m]));
+  const names = await profilesFor((messages || []).map(m => m.user_id));
+
+  return section(
+    'BASECAMP',
+    'Meldingen',
+    'Blijf op de hoogte van gesprekken over avonturen.'
+  ) + `
+    <div class="card">
+      ${items.map(n => {
+        const trip = tripMap[n.trip_id];
+        const message = messageMap[n.discussion_id];
+
+        if (!trip || !message) return '';
+
+        return `
+          <article style="border-bottom:1px solid var(--line);padding:12px 0">
+            <div class="feedtop">
+              <b>${esc(names[message.user_id] || 'Avonturier')}</b>
+              ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
+            </div>
+            <p><b>${esc(trip.title)}</b></p>
+            <p>${esc(message.content)}</p>
+            <button class="btn light"
+              onclick="openTripNotification('${n.id}','${n.trip_id}')">
+              Bekijk gesprek →
+            </button>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function openTripNotification(notificationId, tripId) {
+  const {error} = await sb
+    .from('trip_discussion_notifications')
+    .update({read_at: new Date().toISOString()})
+    .eq('id', notificationId)
+    .eq('recipient_id', me.id);
+
+  if (error) {
+    alert('Melding openen mislukt: ' + error.message);
+    return;
+  }
+
+  selectedTripId = tripId;
+  await go('tripDiscussion');
+}
+
 async function sendTripDiscussion() {
   const input = $('tripDiscussionText');
   const content = input?.value.trim();
