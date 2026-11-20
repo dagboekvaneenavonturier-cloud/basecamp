@@ -450,7 +450,7 @@ return `<div class="card">
 </div>
 
 <div class="image-actions">
-<label class="image-label" for="postImage">▧ Foto toevoegen</label>
+<button type="button" class="btn light" onclick="document.getElementById('postImage').click()">▧ Foto toevoegen</button>
 <input id="postImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="previewPostImage()">
 <span class="muted">JPG, PNG, WebP of GIF · max. 8 MB</span>
 </div>
