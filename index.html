@@ -209,10 +209,137 @@ async function go(p){page=p;document.querySelectorAll('[data-page]').forEach(b=>
 async function render(){if(!me)return;try{$('main').innerHTML='<p class="muted">Basecamp wordt geladen…</p>';const html=page==='home'?await home():page==='community'?await community():page==='discover'?await discover():page==='chat'?await chat():page==='profile'?profile():page==='admin'?await admin():'Niet gevonden.';$('main').innerHTML=html}catch(e){$('main').innerHTML=`<div class="notice error">${esc(e.message||'Er ging iets mis bij het laden.')}</div>`}}
 async function profilesFor(ids){if(!ids.length)return {};const {data,error}=await sb.from('profiles').select('id,display_name').in('id',[...new Set(ids)]);if(error)throw error;return Object.fromEntries((data||[]).map(x=>[x.id,x.display_name||'Avonturier']))}
 async function postsHtml(){const {data:posts,error}=await sb.from('posts').select('id,user_id,group_id,content,created_at').order('created_at',{ascending:false}).limit(50);if(error)throw error;const names=await profilesFor((posts||[]).map(p=>p.user_id));const ids=(posts||[]).map(p=>p.id);let likes=[],comments=[];if(ids.length){const l=await sb.from('likes').select('post_id,user_id').in('post_id',ids);if(l.error)throw l.error;likes=l.data||[];const c=await sb.from('comments').select('id,post_id,user_id,content,created_at').in('post_id',ids).order('created_at');if(c.error)throw c.error;comments=c.data||[]}const cn=await profilesFor(comments.map(c=>c.user_id));return (posts||[]).map(p=>{const pc=comments.filter(c=>c.post_id===p.id);const count=likes.filter(l=>l.post_id===p.id).length;const liked=likes.some(l=>l.post_id===p.id&&l.user_id===me.id);return `<article class="post"><div class="feedtop"><b>${esc(names[p.user_id]||'Avonturier')}</b> · ${new Date(p.created_at).toLocaleString('nl-BE')}</div><p>${esc(p.content)}</p><button onclick="toggleLike('${p.id}',${liked})">${liked?'♥':'♡'} ${count} vind-ik-leuks</button> <button onclick="addComment('${p.id}')">▢ ${pc.length} reacties</button>${pc.map(c=>`<p class="muted"><b>${esc(cn[c.user_id]||'Avonturier')}:</b> ${esc(c.content)}</p>`).join('')}</article>`}).join('')}
-function composer(){return `<div class="card"><div class="eyebrow">DEEL IETS MET DE COMMUNITY</div><textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea><div class="row"><span class="muted">Een vraag, verhaal of avontuur...</span><button class="btn" onclick="addPost()">Plaatsen</button></div></div>`}
+
+function composer(){
+return `<div class="card">
+<div class="eyebrow">DEEL IETS MET DE COMMUNITY</div>
+<textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea>
+
+<div id="imagePreview" class="hidden" style="margin-top:12px">
+<img id="previewImage" alt="Fotovoorbeeld" style="width:100%;max-height:300px;object-fit:cover;border-radius:10px">
+<button type="button" class="btn light" onclick="removePostImage()">Foto verwijderen</button>
+</div>
+
+<div style="margin-top:12px">
+<button type="button" class="btn light" onclick="document.getElementById('postImage').click()">▧ Foto toevoegen</button>
+<input id="postImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="previewPostImage()">
+<span class="muted"> JPG, PNG, WebP of GIF · max. 8 MB</span>
+</div>
+
+<div class="row" style="margin-top:14px">
+<span class="muted">Een vraag, verhaal of avontuur...</span>
+<button class="btn" id="postButton" onclick="addPost()">Plaatsen</button>
+</div>
+</div>`;
+}
+  
+function previewPostImage(){
+const input=$('postImage');
+const file=input.files[0];
+if(!file)return;
+
+const allowed=['image/jpeg','image/png','image/webp','image/gif'];
+
+if(!allowed.includes(file.type)){
+alert('Kies een JPG-, PNG-, WebP- of GIF-afbeelding.');
+input.value='';
+return;
+}
+
+if(file.size>8*1024*1024){
+alert('De foto mag maximaal 8 MB groot zijn.');
+input.value='';
+return;
+}
+
+const img=$('previewImage');
+
+if(img.dataset.objectUrl){
+URL.revokeObjectURL(img.dataset.objectUrl);
+}
+
+const url=URL.createObjectURL(file);
+img.src=url;
+img.dataset.objectUrl=url;
+$('imagePreview').classList.remove('hidden');
+}
+
+function removePostImage(){
+const img=$('previewImage');
+
+if(img.dataset.objectUrl){
+URL.revokeObjectURL(img.dataset.objectUrl);
+}
+
+img.removeAttribute('src');
+delete img.dataset.objectUrl;
+
+$('postImage').value='';
+$('imagePreview').classList.add('hidden');
+}
+
 async function home(){return `<div class="hero"><div class="eyebrow">DAGBOEK VAN EEN AVONTURIER</div><h1>Welkom op Basecamp,<br>${esc(me.display_name||'avonturier')}.</h1><p>Jouw digitale ontmoetingsplaats voor nieuwe plannen, sterke verhalen en avonturiers die dezelfde goesting delen.</p><button class="btn gold" onclick="go('community')">Ontmoet de community →</button></div><h2 style="font:23px Georgia;margin-top:25px">Waar heb je zin in?</h2><div class="grid"><div class="card" onclick="go('community')"><h3>◎ Community</h3><p class="muted">Deel verhalen en stel vragen.</p></div><div class="card" onclick="go('discover')"><h3>⌖ Ontdek avonturen</h3><p class="muted">Bekijk reizen en activiteiten.</p></div><div class="card" onclick="go('chat')"><h3>☏ Groepsgesprekken</h3><p class="muted">Praat met andere avonturiers.</p></div><div class="card" onclick="go('profile')"><h3>◉ Mijn profiel</h3><p class="muted">Vertel wie je bent.</p></div></div><h2 style="font:23px Georgia">Uit de community</h2>${await postsHtml()}`}
 async function community(){return section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.')+composer()+await postsHtml()}
-async function addPost(){const content=$('newPost').value.trim();if(!content)return;const {error}=await sb.from('posts').insert({user_id:me.id,content});if(error)alert(error.message);else await render()}
+
+async function addPost(){
+const content=$('newPost').value.trim();
+const file=$('postImage')?.files?.[0]||null;
+
+if(!content&&!file){
+alert('Schrijf een bericht of voeg een foto toe.');
+return;
+}
+
+let imageUrl=null;
+let uploadedPath=null;
+
+try{
+if(file){
+const extensions={
+'image/jpeg':'jpg',
+'image/png':'png',
+'image/webp':'webp',
+'image/gif':'gif'
+};
+
+if(!extensions[file.type]||file.size>8*1024*1024){
+alert('Kies een geldige foto van maximaal 8 MB.');
+return;
+}
+
+const extension=extensions[file.type];
+const path=me.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+extension;
+
+const {error:uploadError}=await sb.storage
+.from('post-images')
+.upload(path,file,{
+contentType:file.type,
+upsert:false
+});
+
+if(uploadError)throw uploadError;
+
+uploadedPath=path;
+imageUrl=sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+}
+
+const {error}=await sb.from('posts').insert({
+user_id:me.id,
+content:content,
+image_url:imageUrl
+});
+
+if(error)throw error;
+
+await render();
+
+}catch(error){
+if(uploadedPath){
+await sb.storage.from('post-images').remove([uploadedPath]);
+}
+alert('Bericht plaatsen mislukt: '+(error.message||error));
+}
+}
 async function toggleLike(post_id,liked){const q=liked?sb.from('likes').delete().eq('post_id',post_id).eq('user_id',me.id):sb.from('likes').insert({post_id,user_id:me.id});const {error}=await q;if(error)alert(error.message);else await render()}
 async function addComment(post_id){const content=prompt('Jouw reactie:');if(!content||!content.trim())return;const {error}=await sb.from('comments').insert({post_id,user_id:me.id,content:content.trim()});if(error)alert(error.message);else await render()}
 async function discover(){const {data,error}=await sb.from('trips').select('id,title,destination,description,start_date,end_date,status').eq('status','published').order('start_date');if(error)throw error;return section('NIEUWE PLANNEN','Ontdek avonturen','Reizen en activiteiten van Dagboek van een Avonturier.')+`<div class="grid">${(data||[]).map(t=>`<div class="card"><span class="tag">${esc(t.destination||'Avontuur')}</span><h3>${esc(t.title)}</h3><b>${t.start_date?new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE'):''}${t.end_date?' – '+new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE'):''}</b><p class="muted">${esc(t.description||'')}</p></div>`).join('')||'<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}</div>`}
@@ -454,9 +581,10 @@ if(error)throw error;
 return Object.fromEntries((data||[]).map(x=>[x.id,x.display_name||'Avonturier']));
 }
 
+
 async function postsHtml(){
 const {data:posts,error}=await sb.from('posts')
-.select('id,user_id,group_id,content,created_at')
+.select('id,user_id,group_id,content,image_url,created_at')
 .order('created_at',{ascending:false})
 .limit(50);
 
@@ -490,13 +618,15 @@ const liked=likes.some(l=>l.post_id===p.id&&l.user_id===me.id);
 
 return `<article class="post">
 <div class="feedtop"><b>${esc(names[p.user_id]||'Avonturier')}</b> · ${new Date(p.created_at).toLocaleString('nl-BE')}</div>
-<p>${esc(p.content)}</p>
+${p.content?`<p>${esc(p.content)}</p>`:''}
+${p.image_url?`<img src="${esc(p.image_url)}" alt="Foto bij communitybericht" loading="lazy" style="width:100%;max-height:500px;object-fit:contain;border-radius:10px;margin:10px 0">`:''}
 <button onclick="toggleLike('${p.id}',${liked})">${liked?'♥':'♡'} ${count} vind-ik-leuks</button>
 <button onclick="addComment('${p.id}')">▢ ${pc.length} reacties</button>
 ${pc.map(c=>`<p class="muted"><b>${esc(cn[c.user_id]||'Avonturier')}:</b> ${esc(c.content)}</p>`).join('')}
 </article>`;
 }).join('');
 }
+
 
 function composer(){
 return `<div class="card">
