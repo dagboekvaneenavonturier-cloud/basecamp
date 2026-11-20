@@ -440,7 +440,21 @@ async function profilesFor(ids) {
     (data || []).map(x => [x.id,x.display_name || 'Avonturier'])
   );
 }
+async function updateNotificationBadge() {
+  try {
+    const count = await unreadNotificationsCount();
 
+    ['notificationCount', 'notificationCountMobile'].forEach(id => {
+      const badge = document.getElementById(id);
+      if (!badge) return;
+
+      badge.textContent = count;
+      badge.classList.toggle('hidden', count === 0);
+    });
+  } catch (e) {
+    console.error('Meldingen tellen mislukt:', e);
+  }
+}
 /* COMMUNITYBERICHTEN EN FOTO'S */
 
 async function postsHtml() {
