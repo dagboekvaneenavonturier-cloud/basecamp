@@ -152,8 +152,8 @@ main{padding:18px 14px 85px}
     <div class="eyebrow">AANVRAAG ONTVANGEN</div>
     <h1 style="font:28px Georgia">Welkom op Basecamp.</h1>
     <div class="status">
-      <b>Je aanvraag wacht op goedkeuring.</b>
-      <p class="muted">Je e-mailadres is bevestigd. Zodra het team van Dagboek van een Avonturier je aanvraag goedkeurt, krijg je toegang tot de community.</p>
+      <b id="pendingTitle">Je aanvraag wacht op goedkeuring.</b>
+      <p class="muted" id="pendingText">Je e-mailadres is bevestigd. Zodra het team van Dagboek van een Avonturier je aanvraag goedkeurt, krijg je toegang tot de community.</p>
     </div>
     <button class="btn light" id="pendingLogout" type="button">Uitloggen</button>
   </div>
@@ -355,7 +355,7 @@ async function refreshAuth() {
   }
 
   const {data:profile,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,role,status')
+    .select('id,display_name,bio,avatar_url,role,status,left_at')
     .eq('id',s.user.id)
     .maybeSingle();
 
@@ -369,6 +369,10 @@ async function refreshAuth() {
   $('auth').classList.add('hidden');
 
   if (profile.status !== 'approved') {
+    $('pendingTitle').textContent = profile.left_at ? 'Je hebt BASECAMP verlaten.' : 'Je aanvraag wacht op goedkeuring.';
+    $('pendingText').textContent = profile.left_at
+      ? 'Je account is gedeactiveerd. Je eerdere bijdragen en reisgeschiedenis zijn bewaard, maar je hebt geen toegang meer tot de community. Neem contact op met het team als je opnieuw wilt deelnemen.'
+      : 'Je e-mailadres is bevestigd. Zodra het team van Dagboek van een Avonturier je aanvraag goedkeurt, krijg je toegang tot de community.';
     $('workspace').classList.add('hidden');
     $('mobile').classList.add('hidden');
     $('pending').classList.remove('hidden');
@@ -1843,9 +1847,28 @@ async function profile() {
       <button class="btn" onclick="saveProfile()">Profiel bewaren</button>
       <p class="muted">Accountstatus: goedgekeurd</p>
     </div>
+    <div class="card" style="margin-top:18px;border:1px solid #c98b72">
+      <h3>BASECAMP verlaten</h3>
+      <p class="muted">Wil je geen deel meer uitmaken van de community? Je account wordt gedeactiveerd. Je eerdere berichten, foto's en reisgeschiedenis blijven bewaard.</p>
+      <button class="btn light" style="border-color:#a65b43;color:#8d432f" onclick="leaveCommunity()">Mijn account stopzetten</button>
+    </div>
     <div style="margin-top:22px">${section('MIJN VERZAMELING','Mijn avonturenpatches','Een tastbare herinnering aan elke reis die je met Dagboek van een Avonturier hebt beleefd.')}
       <div class="card">${patchesHtml(patches)}</div>
     </div>`;
+}
+
+async function leaveCommunity() {
+  const confirmed = confirm('Wil je BASECAMP verlaten? Je account wordt gedeactiveerd en je kunt daarna niet meer inloggen op de community. Je bestaande berichten, foto’s en reisgeschiedenis blijven bewaard.');
+  if (!confirmed) return;
+
+  try {
+    const {error} = await sb.rpc('leave_basecamp');
+    if (error) throw error;
+    alert('Je BASECAMP-account is stopgezet. Je eerdere bijdragen zijn bewaard.');
+    await signOut();
+  } catch (error) {
+    alert('Account stopzetten is niet gelukt: ' + (error.message || error));
+  }
 }
 
 async function openMemberProfile(userId) {
@@ -2106,7 +2129,7 @@ async function changeMemberAdmin(userId, makeAdmin) {
 
 async function reviewMember(id,status) {
   const {error} = await sb.from('profiles')
-    .update({status})
+    .update({status, ...(status === 'approved' ? {left_at:null} : {})})
     .eq('id',id);
 
   if (error) alert(error.message);
