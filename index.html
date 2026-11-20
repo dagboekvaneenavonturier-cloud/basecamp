@@ -65,7 +65,7 @@ textarea{min-height:80px}
 .tabs button{padding:8px 12px;border:1px solid var(--line);background:white;border-radius:20px;cursor:pointer}
 .tabs button.active{background:var(--g);color:white}
 .mobile{display:none}
-.avatar{background:#e9dfc9;color:var(--g);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;font-weight:800}
+.avatar{background:#e9dfc9;color:var(--g);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;font-weight:800;overflow:hidden;flex:0 0 auto}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.profile-avatar{width:92px;height:92px;font-size:25px;margin-bottom:14px}
 .footer{text-align:center;padding:20px;color:#8b9489;font-size:10px}
 .status{padding:15px;border-radius:10px;background:#edf0e9;margin:12px 0}
 .error{background:#f8e5e1;color:#8a3025}
@@ -1754,6 +1754,11 @@ async function sendMessage() {
 
 /* PROFIEL */
 
+function avatarMarkup(url, name, extraClass = '') {
+  const fallback = initials(name);
+  return `<div class="avatar ${extraClass}">${url ? `<img src="${esc(url)}" alt="Profielfoto van ${esc(name || 'avonturier')}">` : fallback}</div>`;
+}
+
 async function profile() {
   const {data:participantRows,error} = await sb.from('trip_participants')
     .select('trip_id').eq('user_id',me.id);
@@ -1769,7 +1774,8 @@ async function profile() {
 
   return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.')
     + `<div class="card">
-      <div class="avatar">${initials(me.display_name)}</div>
+      ${avatarMarkup(me.avatar_url, me.display_name, 'profile-avatar')}
+      <div class="field"><label for="pphoto">Profielfoto</label><input id="pphoto" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">Kies een JPG-, PNG- of WEBP-foto van maximaal 5 MB. Je kunt later een andere foto uploaden.</small></div>
       <div class="field"><label for="pname">Naam</label><input id="pname" value="${esc(me.display_name || '')}"></div>
       <div class="field"><label for="pbio">Over mij</label><textarea id="pbio">${esc(me.bio || '')}</textarea></div>
       <div class="field"><label>E-mailadres</label><input value="${esc(me.email)}" disabled></div>
@@ -1807,7 +1813,7 @@ async function memberProfile() {
 
   return section('AVONTURIER','Maak kennis','Ontdek welke avonturen deze BASECAMP-avonturier al heeft beleefd.')
     + `<button class="btn light" onclick="go('discover')">← Terug</button>
-      <div class="card"><div class="avatar">${initials(person.display_name)}</div>
+      <div class="card">${avatarMarkup(person.avatar_url, person.display_name, 'profile-avatar')}
       <h3>${esc(person.display_name || 'Avonturier')}</h3>
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
@@ -1818,18 +1824,40 @@ async function memberProfile() {
 async function saveProfile() {
   const display_name = $('pname').value.trim();
   const bio = $('pbio').value.trim();
+  const photoInput = $('pphoto');
+  const photo = photoInput && photoInput.files ? photoInput.files[0] : null;
+  let avatar_url = me.avatar_url || null;
 
-  const {error} = await sb.from('profiles')
-    .update({display_name,bio})
-    .eq('id',me.id);
+  try {
+    if (photo) {
+      if (!['image/jpeg','image/png','image/webp'].includes(photo.type)) {
+        throw new Error('Gebruik een JPG-, PNG- of WEBP-afbeelding.');
+      }
+      if (photo.size > 5 * 1024 * 1024) {
+        throw new Error('Je profielfoto mag maximaal 5 MB groot zijn.');
+      }
+      const ext = photo.type === 'image/png' ? 'png' : photo.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = me.id + '/avatars/' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + ext;
+      const {error:uploadError} = await sb.storage.from('post-images').upload(path, photo, {
+        contentType: photo.type,
+        upsert: false
+      });
+      if (uploadError) throw uploadError;
+      avatar_url = sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+    }
 
-  if (error) {
-    alert(error.message);
-  } else {
+    const {error} = await sb.from('profiles')
+      .update({display_name,bio,avatar_url})
+      .eq('id',me.id);
+    if (error) throw error;
+
     me.display_name = display_name;
     me.bio = bio;
+    me.avatar_url = avatar_url;
     $('userLabel').textContent = 'Welkom, ' + display_name;
     await render();
+  } catch (error) {
+    alert('Profiel bewaren mislukt: ' + (error.message || error));
   }
 }
 
