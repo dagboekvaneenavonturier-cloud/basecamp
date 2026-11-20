@@ -1127,6 +1127,7 @@ async function saveProfile() {
 /* BEHEER */
 
 
+
 async function admin() {
   if (!['admin','moderator'].includes(me.role)) {
     return 'Geen toegang.';
@@ -1140,9 +1141,9 @@ async function admin() {
   if (error) throw error;
 
   const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination')
+    .select('id,title,destination,status')
     .eq('status','published')
-    .order('title');
+    .order('start_date');
 
   if (tripError) throw tripError;
 
@@ -1156,33 +1157,11 @@ async function admin() {
     (interests || []).map(i => i.user_id)
   );
 
-  const interestOverview = (trips || []).map(t => {
-    const members = (interests || [])
-      .filter(i => i.trip_id === t.id);
-
-    return `
-      <div style="border-top:1px solid var(--line);padding:12px 0">
-        <h3>${esc(t.title)}</h3>
-        <span class="tag">${members.length} geïnteresseerde(n)</span>
-
-        ${members.length
-          ? `<ul>
-              ${members.map(i => `
-                <li>${esc(names[i.user_id] || 'Avonturier')}</li>
-              `).join('')}
-            </ul>`
-          : '<p class="muted">Nog niemand heeft interesse getoond.</p>'
-        }
-      </div>
-    `;
-  }).join('');
-
-  return section('TEAM BASECAMP','Beheer','Beheer leden en publiceer updates.')
-
+  return section('TEAM BASECAMP','Beheer','Beheer leden, reizen en interesse van avonturiers.')
     + `<div class="card">
-      <b>${(pending || []).length} aanvragen wachten op goedkeuring</b>
+      <b>${pending.length} aanvragen wachten op goedkeuring</b>
 
-      ${(pending || []).map(u => `
+      ${pending.map(u => `
         <p>
           ${esc(u.display_name || 'Nieuw lid')}
           · ${new Date(u.created_at).toLocaleDateString('nl-BE')}
@@ -1193,9 +1172,22 @@ async function admin() {
     </div>
 
     <div class="card">
-      <h3>Reisinteresses</h3>
-      <p class="muted">Hier zie je welke leden interesse hebben getoond in onze reizen.</p>
-      ${interestOverview || '<p class="muted">Er zijn nog geen gepubliceerde reizen.</p>'}
+      <h3>Interesse in onze reizen</h3>
+      <p class="muted">Hier zie je welke leden interesse hebben getoond.</p>
+
+      ${trips.map(t => {
+        const people = (interests || []).filter(i => i.trip_id === t.id);
+
+        return `
+          <div style="border-top:1px solid var(--line);padding:12px 0">
+            <b>${esc(t.title)}</b>
+            <span class="tag">${people.length} geïnteresseerden</span>
+            ${people.length
+              ? `<p class="muted">${people.map(i => esc(names[i.user_id] || 'Avonturier')).join(', ')}</p>`
+              : '<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+          </div>
+        `;
+      }).join('') || '<p class="muted">Er zijn nog geen gepubliceerde reizen.</p>'}
     </div>
 
     <div class="card">
@@ -1214,6 +1206,7 @@ async function admin() {
       <button class="btn" onclick="addTrip()">Reis toevoegen en publiceren</button>
     </div>`;
 }
+
 
 
 async function reviewMember(id,status) {
