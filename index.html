@@ -412,6 +412,7 @@ async function render() {
       'Niet gevonden.';
 
     $('main').innerHTML = html;
+    await updateNotificationBadge();
   } catch (e) {
     $('main').innerHTML = `<div class="notice error">${esc(e.message || 'Er ging iets mis bij het laden.')}</div>`;
   }
