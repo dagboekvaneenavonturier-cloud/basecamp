@@ -412,7 +412,17 @@ async function render() {
     $('main').innerHTML = `<div class="notice error">${esc(e.message || 'Er ging iets mis bij het laden.')}</div>`;
   }
 }
+async function unreadNotificationsCount() {
+  const {count, error} = await sb
+    .from('trip_discussion_notifications')
+    .select('id', {count: 'exact', head: true})
+    .eq('recipient_id', me.id)
+    .is('read_at', null);
 
+  if (error) throw error;
+
+  return count || 0;
+}
 async function profilesFor(ids) {
   if (!ids.length) return {};
 
