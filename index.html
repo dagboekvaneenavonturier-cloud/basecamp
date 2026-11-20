@@ -1021,20 +1021,34 @@ async function tripDiscussion() {
   `;
 }
 
+
 async function notifications() {
-  const {data: items, error} = await sb
-    .from('trip_discussion_notifications')
-    .select('id,trip_id,discussion_id,created_at,read_at')
-    .eq('recipient_id', me.id)
-    .order('created_at', {ascending: false});
+  const [
+    {data: tripItems, error: tripError},
+    {data: postItems, error: postError}
+  ] = await Promise.all([
+    sb.from('trip_discussion_notifications')
+      .select('id,trip_id,discussion_id,created_at,read_at')
+      .eq('recipient_id', me.id)
+      .order('created_at', {ascending: false}),
 
-  if (error) throw error;
+    sb.from('post_comment_notifications')
+      .select('id,post_id,comment_id,created_at,read_at')
+      .eq('recipient_id', me.id)
+      .order('created_at', {ascending: false})
+  ]);
 
-  if (!items || items.length === 0) {
+  if (tripError) throw tripError;
+  if (postError) throw postError;
+
+  const trips = tripItems || [];
+  const posts = postItems || [];
+
+  if (trips.length === 0 && posts.length === 0) {
     return section(
       'BASECAMP',
       'Meldingen',
-      'Hier verschijnen nieuwe reacties op reisgesprekken.'
+      'Hier verschijnen nieuwe reacties op reisgesprekken en communityberichten.'
     ) + `
       <div class="card">
         <p class="muted">Je hebt momenteel nog geen meldingen.</p>
@@ -1042,54 +1056,129 @@ async function notifications() {
     `;
   }
 
-  const tripIds = [...new Set(items.map(n => n.trip_id))];
-  const discussionIds = items.map(n => n.discussion_id);
+  let tripHtml = '';
+  let postHtml = '';
 
-  const [{data: trips, error: tripsError}, {data: messages, error: messagesError}] =
-    await Promise.all([
+  if (trips.length > 0) {
+    const tripIds = [...new Set(trips.map(n => n.trip_id))];
+    const discussionIds = trips.map(n => n.discussion_id);
+
+    const [
+      {data: tripData, error: tripsError},
+      {data: messages, error: messagesError}
+    ] = await Promise.all([
       sb.from('trips').select('id,title').in('id', tripIds),
       sb.from('trip_discussions')
         .select('id,content,user_id')
         .in('id', discussionIds)
     ]);
 
-  if (tripsError) throw tripsError;
-  if (messagesError) throw messagesError;
+    if (tripsError) throw tripsError;
+    if (messagesError) throw messagesError;
 
-  const tripMap = Object.fromEntries((trips || []).map(t => [t.id, t]));
-  const messageMap = Object.fromEntries((messages || []).map(m => [m.id, m]));
-  const names = await profilesFor((messages || []).map(m => m.user_id));
+    const tripMap = Object.fromEntries(
+      (tripData || []).map(t => [t.id, t])
+    );
+    const messageMap = Object.fromEntries(
+      (messages || []).map(m => [m.id, m])
+    );
+    const names = await profilesFor(
+      (messages || []).map(m => m.user_id)
+    );
+
+    tripHtml = `
+      <div class="card">
+        <h3>Reisgesprekken</h3>
+        ${trips.map(n => {
+          const trip = tripMap[n.trip_id];
+          const message = messageMap[n.discussion_id];
+
+          if (!trip || !message) return '';
+
+          return `
+            <article style="border-bottom:1px solid var(--line);padding:12px 0">
+              <div class="feedtop">
+                <b>${esc(names[message.user_id] || 'Avonturier')}</b>
+                ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
+              </div>
+              <p><b>${esc(trip.title)}</b></p>
+              <p>${esc(message.content)}</p>
+              <button class="btn light"
+                onclick="openTripNotification('${n.id}','${n.trip_id}')">
+                Bekijk gesprek →
+              </button>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  if (posts.length > 0) {
+    const postIds = [...new Set(posts.map(n => n.post_id))];
+    const commentIds = posts.map(n => n.comment_id);
+
+    const [
+      {data: postData, error: postsError},
+      {data: comments, error: commentsError}
+    ] = await Promise.all([
+      sb.from('posts')
+        .select('id,content')
+        .in('id', postIds),
+      sb.from('comments')
+        .select('id,content,user_id')
+        .in('id', commentIds)
+    ]);
+
+    if (postsError) throw postsError;
+    if (commentsError) throw commentsError;
+
+    const postMap = Object.fromEntries(
+      (postData || []).map(p => [p.id, p])
+    );
+    const commentMap = Object.fromEntries(
+      (comments || []).map(c => [c.id, c])
+    );
+    const names = await profilesFor(
+      (comments || []).map(c => c.user_id)
+    );
+
+    postHtml = `
+      <div class="card">
+        <h3>Communityreacties</h3>
+        ${posts.map(n => {
+          const post = postMap[n.post_id];
+          const comment = commentMap[n.comment_id];
+
+          if (!post || !comment) return '';
+
+          return `
+            <article style="border-bottom:1px solid var(--line);padding:12px 0">
+              <div class="feedtop">
+                <b>${esc(names[comment.user_id] || 'Avonturier')}</b>
+                ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
+              </div>
+              <p>Reageerde op jouw bericht:</p>
+              <p class="muted">${esc(post.content || 'Communitybericht')}</p>
+              <p>${esc(comment.content)}</p>
+              <button class="btn light"
+                onclick="openPostNotification('${n.id}','${n.post_id}')">
+                Bekijk bericht →
+              </button>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
 
   return section(
     'BASECAMP',
     'Meldingen',
-    'Blijf op de hoogte van gesprekken over avonturen.'
-  ) + `
-    <div class="card">
-      ${items.map(n => {
-        const trip = tripMap[n.trip_id];
-        const message = messageMap[n.discussion_id];
-
-        if (!trip || !message) return '';
-
-        return `
-          <article style="border-bottom:1px solid var(--line);padding:12px 0">
-            <div class="feedtop">
-              <b>${esc(names[message.user_id] || 'Avonturier')}</b>
-              ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
-            </div>
-            <p><b>${esc(trip.title)}</b></p>
-            <p>${esc(message.content)}</p>
-            <button class="btn light"
-              onclick="openTripNotification('${n.id}','${n.trip_id}')">
-              Bekijk gesprek →
-            </button>
-          </article>
-        `;
-      }).join('')}
-    </div>
-  `;
+    'Blijf op de hoogte van gesprekken en reacties in BASECAMP.'
+  ) + tripHtml + postHtml;
 }
+
 
 async function openTripNotification(notificationId, tripId) {
   const {error} = await sb
