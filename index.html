@@ -852,34 +852,84 @@ async function addComment(post_id) {
   else await render();
 }
 
+
 /* ONTDEK */
 
 async function discover() {
-  const {data,error} = await sb.from('trips')
+  const {data:trips,error} = await sb.from('trips')
     .select('id,title,destination,description,start_date,end_date,status')
     .eq('status','published')
     .order('start_date');
 
   if (error) throw error;
 
+  const {data:interests,error:interestError} = await sb
+    .from('trip_interests')
+    .select('trip_id,user_id')
+    .in('trip_id',(trips || []).map(t => t.id));
+
+  if (interestError) throw interestError;
+
+  const myInterests = new Set(
+    (interests || [])
+      .filter(i => i.user_id === me.id)
+      .map(i => i.trip_id)
+  );
+
   return section(
     'NIEUWE PLANNEN',
     'Ontdek avonturen',
     'Reizen en activiteiten van Dagboek van een Avonturier.'
   ) + `<div class="grid">
-    ${(data || []).map(t => `
-      <div class="card">
-        <span class="tag">${esc(t.destination || 'Avontuur')}</span>
-        <h3>${esc(t.title)}</h3>
-        <b>
-          ${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
-          ${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
-        </b>
-        <p class="muted">${esc(t.description || '')}</p>
-      </div>
-    `).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
+    ${(trips || []).map(t => {
+      const interested = myInterests.has(t.id);
+
+      return `
+        <div class="card">
+          <span class="tag">${esc(t.destination || 'Avontuur')}</span>
+          <h3>${esc(t.title)}</h3>
+          <b>
+            ${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
+            ${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
+          </b>
+          <p class="muted">${esc(t.description || '')}</p>
+
+          <button class="btn ${interested ? 'light' : ''}"
+            onclick="toggleTripInterest('${t.id}',${interested})">
+            ${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}
+          </button>
+        </div>
+      `;
+    }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
   </div>`;
 }
+
+async function toggleTripInterest(tripId, interested) {
+  try {
+    if (interested) {
+      const {error} = await sb.from('trip_interests')
+        .delete()
+        .eq('trip_id',tripId)
+        .eq('user_id',me.id);
+
+      if (error) throw error;
+    } else {
+      const {error} = await sb.from('trip_interests')
+        .insert({
+          trip_id:tripId,
+          user_id:me.id
+        });
+
+      if (error) throw error;
+    }
+
+    await render();
+
+  } catch (e) {
+    alert('Je interesse kon niet worden opgeslagen: ' + e.message);
+  }
+}
+
 
 /* CHATGROEPEN */
 
