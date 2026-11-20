@@ -1929,7 +1929,7 @@ async function saveProfile() {
 
 function adminMenu(active) {
   const items = [
-    ['overview','▦','Overzicht'],['members','♙','Leden'],['trips','⌖','Reizen'],
+    ['overview','▦','Overzicht'],['activity','◷','Activiteit'],['members','♙','Leden'],['trips','⌖','Reizen'],
     ['community','◎','Community'],['admins','⚙','Beheerders']
   ];
   return `<div class="row" style="gap:7px;flex-wrap:wrap;margin:16px 0 20px">
@@ -1959,7 +1959,47 @@ async function admin() {
       ${[['Leden',members.count||0,'members'],['Wachtende aanvragen',pending.count||0,'members'],['Gepubliceerde reizen',trips.count||0,'trips'],['Afgelopen reizen',past.count||0,'trips']].map(([label,count,target])=>`<button class="card" style="text-align:left;cursor:pointer" onclick="setAdminSection('${target}')"><div class="muted">${label}</div><div style="font-size:30px;font-weight:700;margin-top:5px">${count}</div><span class="muted">Bekijk overzicht →</span></button>`).join('')}
     </div>
     <div class="card" style="margin-top:14px"><h3>Snel naar</h3><p class="muted">Gebruik de onderdelen hierboven om leden te beheren, reizen op te volgen of teamupdates te plaatsen.</p>
-    <button class="btn" onclick="setAdminSection('members')">Leden beheren</button> <button class="btn light" onclick="setAdminSection('trips')">Reizen beheren</button></div>`;
+    <button class="btn" onclick="setAdminSection('activity')">Bekijk recente activiteit</button> <button class="btn light" onclick="setAdminSection('members')">Leden beheren</button> <button class="btn light" onclick="setAdminSection('trips')">Reizen beheren</button></div>`;
+  }
+
+  if (adminSection === 'activity') {
+    const [postResult,commentResult,messageResult,interestResult,tripResult] = await Promise.all([
+      sb.from('posts').select('id,user_id,content,created_at').order('created_at',{ascending:false}).limit(20),
+      sb.from('comments').select('id,user_id,content,created_at').order('created_at',{ascending:false}).limit(20),
+      sb.from('messages').select('id,user_id,content,created_at').order('created_at',{ascending:false}).limit(20),
+      sb.from('trip_interests').select('trip_id,user_id,created_at').order('created_at',{ascending:false}).limit(100),
+      sb.from('trips').select('id,title,destination,status').order('start_date',{ascending:true}).limit(200)
+    ]);
+    for (const r of [postResult,commentResult,messageResult,interestResult,tripResult]) if (r.error) throw r.error;
+    const posts = postResult.data || [];
+    const comments = commentResult.data || [];
+    const messages = messageResult.data || [];
+    const interests = interestResult.data || [];
+    const trips = tripResult.data || [];
+    const tripMap = Object.fromEntries(trips.map(t=>[t.id,t]));
+    const ids = [...posts,...comments,...messages,...interests].map(x=>x.user_id);
+    const people = await profilesFor(ids);
+    const activity = [
+      ...posts.map(x=>({...x,kind:'Communitybericht',detail:x.content,target:'community'})),
+      ...comments.map(x=>({...x,kind:'Reactie',detail:x.content,target:'community'})),
+      ...messages.map(x=>({...x,kind:'Chatbericht',detail:x.content,target:'chat'})),
+      ...interests.map(x=>({...x,kind:'Interesse in reis',detail:tripMap[x.trip_id]?.title || 'Reis',target:'trips'}))
+    ].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,35);
+    const counts = {};
+    interests.forEach(x=>{counts[x.trip_id]=(counts[x.trip_id]||0)+1;});
+    const popular = Object.entries(counts).map(([id,count])=>({trip:tripMap[id],count})).filter(x=>x.trip).sort((a,b)=>b.count-a.count).slice(0,8);
+    const activePeople = new Set(activity.map(x=>x.user_id)).size;
+    const fmt = value => value ? new Date(value).toLocaleString('nl-BE',{dateStyle:'medium',timeStyle:'short'}) : 'Datum onbekend';
+    return header + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(135px,1fr))">
+      <div class="card"><div class="muted">Leden met recente activiteit*</div><b style="font-size:28px">${activePeople}</b></div>
+      <div class="card"><div class="muted">Recente communityberichten</div><b style="font-size:28px">${posts.length}</b></div>
+      <div class="card"><div class="muted">Recente chatberichten</div><b style="font-size:28px">${messages.length}</b></div>
+      <div class="card"><div class="muted">Interesses in reizen</div><b style="font-size:28px">${interests.length}</b></div>
+    </div>
+    <p class="muted">*Gebaseerd op recente berichten, reacties, chatberichten en reisinteresses. Dit is geen volledige aanwezigheidsregistratie.</p>
+    <div class="card"><h3>Recente activiteit</h3>${activity.map(x=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)"><div style="flex:1;min-width:0"><div class="row" style="justify-content:flex-start;flex-wrap:wrap;gap:7px">${memberLink(x.user_id,people[x.user_id])}<span class="tag">${x.kind}</span></div><div style="margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere">${esc((x.detail||'').slice(0,180))}${(x.detail||'').length>180?'…':''}</div><small class="muted">${fmt(x.created_at)}</small></div></div>`).join('')||'<p class="muted">Er is nog geen recente activiteit geregistreerd.</p>'}</div>
+    <div class="card"><h3>Reizen met de meeste interesse</h3>${popular.map(x=>`<div class="row" style="padding:9px 0;border-bottom:1px solid var(--line)"><div><b>${esc(x.trip.title)}</b><div class="muted">${esc(x.trip.destination||'')}</div></div><span class="tag">${x.count} ${x.count===1?'interesse':'interesses'}</span></div>`).join('')||'<p class="muted">Er zijn nog geen reisinteresses geregistreerd.</p>'}</div>
+    <button class="btn light" onclick="setAdminSection('members')">Naar ledenbeheer</button> <button class="btn light" onclick="setAdminSection('trips')">Naar reisbeheer</button>`;
   }
 
   if (adminSection === 'members') {
