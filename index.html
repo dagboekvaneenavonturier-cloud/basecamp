@@ -27,6 +27,7 @@ main{padding:28px;max-width:850px;width:100%;margin:auto}
 .eyebrow{font-size:10px;letter-spacing:2px;color:var(--m);font-weight:800}
 .hero .eyebrow{color:#e4c987}
 .btn{background:var(--g);color:white;border:0;border-radius:8px;padding:10px 15px;cursor:pointer;font-weight:650}
+.btn:disabled{opacity:.55;cursor:wait}
 .btn.gold{background:#d7b76e;color:#253329}
 .btn.light{background:#e8ece4;color:var(--g)}
 .card,.post,.login{background:white;border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
@@ -42,6 +43,12 @@ textarea{min-height:80px}
 .feedtop{font-size:12px;color:#68756b}
 .post p{white-space:pre-wrap}
 .post button{background:none;border:0;color:#617064;cursor:pointer}
+.post-image{display:block;width:100%;max-height:520px;object-fit:cover;border-radius:9px;margin:12px 0}
+.image-preview{display:none;margin:12px 0}
+.image-preview img{width:100%;max-height:300px;object-fit:contain;border-radius:9px;background:#f1eee5}
+.image-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
+.image-label{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--g);font-weight:650;font-size:13px}
+.image-label:hover{background:#edf0e9}
 .chat{display:grid;grid-template-columns:180px 1fr;min-height:390px;border:1px solid var(--line);background:white;border-radius:12px;overflow:hidden}
 .rooms{background:#f0eee7;padding:8px}
 .rooms button{display:block;width:100%;text-align:left;padding:10px;border:0;background:none;border-radius:7px;cursor:pointer}
@@ -386,7 +393,7 @@ return Object.fromEntries((data||[]).map(x=>[x.id,x.display_name||'Avonturier'])
 
 async function postsHtml(){
 const {data:posts,error}=await sb.from('posts')
-.select('id,user_id,group_id,content,created_at')
+.select('id,user_id,group_id,content,image_url,created_at')
 .order('created_at',{ascending:false})
 .limit(50);
 
@@ -420,7 +427,8 @@ const liked=likes.some(l=>l.post_id===p.id&&l.user_id===me.id);
 
 return `<article class="post">
 <div class="feedtop"><b>${esc(names[p.user_id]||'Avonturier')}</b> · ${new Date(p.created_at).toLocaleString('nl-BE')}</div>
-<p>${esc(p.content)}</p>
+${p.content?`<p>${esc(p.content)}</p>`:''}
+${p.image_url?`<img class="post-image" src="${esc(p.image_url)}" alt="Foto gedeeld op BASECAMP" loading="lazy">`:''}
 <button onclick="toggleLike('${p.id}',${liked})">${liked?'♥':'♡'} ${count} vind-ik-leuks</button>
 <button onclick="addComment('${p.id}')">▢ ${pc.length} reacties</button>
 ${pc.map(c=>`<p class="muted"><b>${esc(cn[c.user_id]||'Avonturier')}:</b> ${esc(c.content)}</p>`).join('')}
@@ -432,43 +440,138 @@ function composer(){
 return `<div class="card">
 <div class="eyebrow">DEEL IETS MET DE COMMUNITY</div>
 <textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea>
-<div class="row">
+
+<div class="image-preview" id="imagePreview">
+<img id="previewImage" alt="Voorbeeld van je gekozen foto">
+<div class="image-actions">
+<span class="muted" id="imageName"></span>
+<button type="button" class="btn light" onclick="removePostImage()">Foto verwijderen</button>
+</div>
+</div>
+
+<div class="image-actions">
+<label class="image-label" for="postImage">▧ Foto toevoegen</label>
+<input id="postImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="previewPostImage()">
+<span class="muted">JPG, PNG, WebP of GIF · max. 8 MB</span>
+</div>
+
+<div class="row" style="margin-top:14px">
 <span class="muted">Een vraag, verhaal of avontuur...</span>
-<button class="btn" onclick="addPost()">Plaatsen</button>
+<button class="btn" id="postButton" onclick="addPost()">Plaatsen</button>
 </div>
 </div>`;
 }
 
-async function home(){
-return `<div class="hero">
-<div class="eyebrow">DAGBOEK VAN EEN AVONTURIER</div>
-<h1>Welkom op Basecamp,<br>${esc(me.display_name||'avonturier')}.</h1>
-<p>Jouw digitale ontmoetingsplaats voor nieuwe plannen, sterke verhalen en avonturiers die dezelfde goesting delen.</p>
-<button class="btn gold" onclick="go('community')">Ontmoet de community →</button>
-</div>
-<h2 style="font:23px Georgia;margin-top:25px">Waar heb je zin in?</h2>
-<div class="grid">
-<div class="card" onclick="go('community')"><h3>◎ Community</h3><p class="muted">Deel verhalen en stel vragen.</p></div>
-<div class="card" onclick="go('discover')"><h3>⌖ Ontdek avonturen</h3><p class="muted">Bekijk reizen en activiteiten.</p></div>
-<div class="card" onclick="go('chat')"><h3>☏ Groepsgesprekken</h3><p class="muted">Praat met andere avonturiers.</p></div>
-<div class="card" onclick="go('profile')"><h3>◉ Mijn profiel</h3><p class="muted">Vertel wie je bent.</p></div>
-</div>
-<h2 style="font:23px Georgia">Uit de community</h2>
-${await postsHtml()}`;
+let postPreviewUrl=null;
+
+function previewPostImage(){
+const input=$('postImage');
+const file=input.files&&input.files[0];
+
+if(!file){
+removePostImage();
+return;
 }
 
-async function community(){
-return section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.')+composer()+await postsHtml();
+if(!file.type.startsWith('image/')){
+alert('Kies een geldig afbeeldingsbestand.');
+input.value='';
+return;
+}
+
+if(file.size>8*1024*1024){
+alert('Deze foto is groter dan 8 MB. Kies een kleinere foto.');
+input.value='';
+return;
+}
+
+if(postPreviewUrl)URL.revokeObjectURL(postPreviewUrl);
+postPreviewUrl=URL.createObjectURL(file);
+
+$('previewImage').src=postPreviewUrl;
+$('imageName').textContent=file.name;
+$('imagePreview').style.display='block';
+}
+
+function removePostImage(){
+const input=$('postImage');
+if(input)input.value='';
+if(postPreviewUrl){
+URL.revokeObjectURL(postPreviewUrl);
+postPreviewUrl=null;
+}
+if($('previewImage'))$('previewImage').removeAttribute('src');
+if($('imagePreview'))$('imagePreview').style.display='none';
 }
 
 async function addPost(){
 const content=$('newPost').value.trim();
-if(!content)return;
+const input=$('postImage');
+const file=input.files&&input.files[0];
+const button=$('postButton');
 
-const {error}=await sb.from('posts').insert({user_id:me.id,content});
+if(!content&&!file){
+alert('Schrijf een bericht of voeg een foto toe.');
+return;
+}
 
-if(error)alert(error.message);
-else await render();
+if(file&&file.size>8*1024*1024){
+alert('Deze foto is groter dan 8 MB.');
+return;
+}
+
+button.disabled=true;
+button.textContent='Bezig...';
+
+let imageUrl=null;
+let uploadedPath=null;
+
+try{
+if(file){
+const extension=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+const filePath=me.id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+extension;
+
+const {data:uploadData,error:uploadError}=await sb.storage
+.from('post-images')
+.upload(filePath,file,{
+contentType:file.type,
+upsert:false
+});
+
+if(uploadError)throw uploadError;
+
+uploadedPath=uploadData.path;
+
+const {data:urlData}=sb.storage
+.from('post-images')
+.getPublicUrl(uploadData.path);
+
+imageUrl=urlData.publicUrl;
+}
+
+const {error}=await sb.from('posts').insert({
+user_id:me.id,
+content,
+image_url:imageUrl
+});
+
+if(error)throw error;
+
+if(postPreviewUrl){
+URL.revokeObjectURL(postPreviewUrl);
+postPreviewUrl=null;
+}
+
+await render();
+
+}catch(e){
+if(uploadedPath){
+await sb.storage.from('post-images').remove([uploadedPath]);
+}
+alert('Je bericht kon niet worden geplaatst: '+(e.message||'Onbekende fout'));
+button.disabled=false;
+button.textContent='Plaatsen';
+}
 }
 
 async function toggleLike(post_id,liked){
@@ -580,13 +683,11 @@ const el=$('msgs');
 if(el)el.scrollTop=el.scrollHeight;
 },0);
 
-/* Oude chatverbinding opruimen voor een nieuwe wordt aangemaakt. */
 if(chatChannel){
 await sb.removeChannel(chatChannel);
 chatChannel=null;
 }
 
-/* Nieuwe realtime verbinding voor de gekozen groep. */
 chatChannel=sb.channel('basecamp-chat-'+room)
 .on('postgres_changes',{
 event:'INSERT',
@@ -602,7 +703,6 @@ const el=$('msgs');
 
 if(!el)return;
 
-/* Haal eventueel de naam op van een nieuwe deelnemer. */
 let senderName=names[m.user_id];
 
 if(!senderName){
@@ -618,7 +718,6 @@ senderName='Avonturier';
 }
 }
 
-/* Voorkom dat hetzelfde bericht tweemaal verschijnt. */
 if(el.querySelector(`[data-message-id="${m.id}"]`))return;
 
 const bubble=document.createElement('div');
