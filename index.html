@@ -1676,20 +1676,32 @@ async function tripArchive() {
   let photoRows = [];
   if (ids.length) {
     const {data,error:photoError} = await sb.from('trip_photos')
-      .select('id,trip_id').in('trip_id',ids);
+      .select('id,trip_id,storage_path,created_at').in('trip_id',ids)
+      .order('created_at',{ascending:false});
     if (photoError) throw photoError;
-    photoRows = photoRows || [];
     photoRows = data || [];
+  }
+  const albumInfo = {};
+  for (const photo of photoRows) {
+    if (!albumInfo[photo.trip_id]) {
+      albumInfo[photo.trip_id] = {count:0,cover:null};
+    }
+    albumInfo[photo.trip_id].count++;
+    if (!albumInfo[photo.trip_id].cover) {
+      const {data:signedData} = await sb.storage.from('reisarchief').createSignedUrl(photo.storage_path,3600);
+      if (signedData?.signedUrl) albumInfo[photo.trip_id].cover = signedData.signedUrl;
+    }
   }
   return section('HERINNERINGEN','Het Reisarchief','Blader door foto’s van avonturen die we samen beleefd hebben. Misschien ontdek je hier wel jouw volgende reis.')
     + `<div class="grid">${rows.map(t => {
-      const count = photoRows.filter(p => p.trip_id === t.id).length;
-      return `<div class="card" style="cursor:pointer" onclick="openTripAlbum('${t.id}')">
-        ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="width:100%;height:180px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
+      const album = albumInfo[t.id] || {count:0,cover:null};
+      const cover = album.cover || t.image_url;
+      return `<div class="card" style="cursor:pointer;overflow:hidden" onclick="openTripAlbum('${t.id}')">
+        ${cover ? `<img src="${esc(cover)}" alt="Foto uit ${esc(t.title)}" loading="lazy" style="width:calc(100% + 32px);height:190px;object-fit:cover;margin:-16px -16px 14px">` : `<div style="height:130px;display:grid;place-items:center;background:var(--surface-2,#eef1eb);border-radius:10px;margin-bottom:12px;font-size:36px">📷</div>`}
         <span class="tag">${esc(t.destination || 'Avontuur')}</span><h3>${esc(t.title)}</h3>
         <p class="muted">${t.start_date ? new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – '+new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE') : ''}</p>
-        <p class="muted">${count} ${count === 1 ? 'foto' : 'foto’s'}</p>
-        <button class="btn">Bekijk fotoalbum →</button>
+        <p class="muted">📷 ${album.count} ${album.count === 1 ? 'gedeelde foto' : 'gedeelde foto’s'}</p>
+        <button class="btn">${album.count ? 'Bekijk fotoalbum →' : 'Bekijk reis →'}</button>
       </div>`;
     }).join('') || '<div class="card"><p>Er staan nog geen afgelopen reizen in het Reisarchief.</p></div>'}</div>`;
 }
