@@ -210,6 +210,7 @@ async function render(){if(!me)return;try{$('main').innerHTML='<p class="muted">
 async function profilesFor(ids){if(!ids.length)return {};const {data,error}=await sb.from('profiles').select('id,display_name').in('id',[...new Set(ids)]);if(error)throw error;return Object.fromEntries((data||[]).map(x=>[x.id,x.display_name||'Avonturier']))}
 async function postsHtml(){const {data:posts,error}=await sb.from('posts').select('id,user_id,group_id,content,created_at').order('created_at',{ascending:false}).limit(50);if(error)throw error;const names=await profilesFor((posts||[]).map(p=>p.user_id));const ids=(posts||[]).map(p=>p.id);let likes=[],comments=[];if(ids.length){const l=await sb.from('likes').select('post_id,user_id').in('post_id',ids);if(l.error)throw l.error;likes=l.data||[];const c=await sb.from('comments').select('id,post_id,user_id,content,created_at').in('post_id',ids).order('created_at');if(c.error)throw c.error;comments=c.data||[]}const cn=await profilesFor(comments.map(c=>c.user_id));return (posts||[]).map(p=>{const pc=comments.filter(c=>c.post_id===p.id);const count=likes.filter(l=>l.post_id===p.id).length;const liked=likes.some(l=>l.post_id===p.id&&l.user_id===me.id);return `<article class="post"><div class="feedtop"><b>${esc(names[p.user_id]||'Avonturier')}</b> · ${new Date(p.created_at).toLocaleString('nl-BE')}</div><p>${esc(p.content)}</p><button onclick="toggleLike('${p.id}',${liked})">${liked?'♥':'♡'} ${count} vind-ik-leuks</button> <button onclick="addComment('${p.id}')">▢ ${pc.length} reacties</button>${pc.map(c=>`<p class="muted"><b>${esc(cn[c.user_id]||'Avonturier')}:</b> ${esc(c.content)}</p>`).join('')}</article>`}).join('')}
 
+
 function composer(){
 return `<div class="card">
 <div class="eyebrow">DEEL IETS MET DE COMMUNITY</div>
@@ -223,7 +224,7 @@ return `<div class="card">
 <div style="margin-top:12px">
 <button type="button" class="btn light" onclick="document.getElementById('postImage').click()">▧ Foto toevoegen</button>
 <input id="postImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="previewPostImage()">
-<span class="muted"> JPG, PNG, WebP of GIF · max. 8 MB</span>
+<span class="muted">JPG, PNG, WebP of GIF · max. 8 MB</span>
 </div>
 
 <div class="row" style="margin-top:14px">
@@ -232,6 +233,7 @@ return `<div class="card">
 </div>
 </div>`;
 }
+
   
 function previewPostImage(){
 const input=$('postImage');
