@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -55,6 +56,7 @@ textarea{min-height:80px}
 .send{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line)}
 .send input{flex:1}
 .notice{background:#f4ead1;padding:12px;border-radius:9px;font-size:12px;color:#66552e;margin:12px 0}
+.notification-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;margin-left:5px;border-radius:50%;background:#6e865f;color:#fff;font-size:11px;font-weight:800;line-height:1;vertical-align:middle}
 .hidden{display:none!important}
 .loginwrap{max-width:430px;margin:45px auto;padding:15px}
 .login{padding:25px}
@@ -161,7 +163,7 @@ main{padding:18px 14px 85px}
       <button data-page="community">◎ Community</button>
       <button data-page="discover">⌖ Ontdek</button>
 <button data-page="notifications">
-  ♢ Meldingen <span id="notificationCount" class="badge hidden"></span>
+  ♢ Meldingen <span id="notificationCount" class="notification-badge hidden"></span>
 </button>
 <button data-page="chat">☏ Chatgroepen</button>
 <button data-page="profile">◉ Mijn profiel</button>
@@ -178,7 +180,7 @@ main{padding:18px 14px 85px}
   <button data-page="community">◎<br>Community</button>
   <button data-page="discover">⌖ Ontdek</button>
 <button data-page="notifications">
-  ♢ Meldingen <span id="notificationCountMobile" class="badge hidden"></span>
+  ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
 <button data-page="chat">☏ Chatgroepen</button>
   <button data-page="profile">◉<br>Profiel</button>
