@@ -447,6 +447,60 @@ async function unreadNotificationsCount() {
 }
 
 
+async function profilesFor(ids) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+
+  if (uniqueIds.length === 0) return {};
+
+  const {data, error} = await sb
+    .from('profiles')
+    .select('id,display_name')
+    .in('id', uniqueIds);
+
+  if (error) throw error;
+
+  return Object.fromEntries(
+    (data || []).map(p => [p.id, p.display_name])
+  );
+}
+
+async function updateNotificationBadge() {
+  if (!me) return null;
+
+  try {
+    const count = await unreadNotificationsCount();
+
+    ['notificationCount', 'notificationCountMobile'].forEach(id => {
+      const badge = $(id);
+      if (!badge) return;
+
+      badge.textContent = count;
+      badge.classList.toggle('hidden', count === 0);
+    });
+
+    return count;
+  } catch (error) {
+    console.error('Meldingen bijwerken mislukt:', error);
+    return null;
+  }
+}
+
+function startNotificationRefresh() {
+  if (notificationRefreshTimer) {
+    clearInterval(notificationRefreshTimer);
+  }
+
+  notificationRefreshTimer = setInterval(async () => {
+    if (!me) return;
+
+    await updateNotificationBadge();
+
+    if (page === 'notifications') {
+      await render();
+    }
+  }, 15000);
+}
+
 /* COMMUNITYBERICHTEN EN FOTO'S */
 
 async function postsHtml() {
