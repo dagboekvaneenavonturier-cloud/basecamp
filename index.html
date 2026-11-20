@@ -210,6 +210,9 @@ let room = null;
 let chatChannel = null;
 let selectedTripId = null;
 let selectedProfileId = null;
+let adminSection = 'overview';
+let adminMemberPage = 0;
+let adminMemberSearch = '';
 let notificationRefreshTimer = null;
 const $ = id => document.getElementById(id);
 
@@ -1924,127 +1927,105 @@ async function saveProfile() {
 
 
 
-async function admin() {
-  if (!['admin','moderator'].includes(me.role)) {
-    return 'Geen toegang.';
-  }
-
-  const {data:pending,error} = await sb.from('profiles')
-    .select('id,display_name,created_at')
-    .eq('status','pending')
-    .order('created_at');
-
-  if (error) throw error;
-
-  const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination,status,patch_image_url')
-    .in('status',['published','completed'])
-    .order('start_date');
-
-  if (tripError) throw tripError;
-
-  const {data:interests,error:interestError} = await sb
-    .from('trip_interests')
-    .select('trip_id,user_id,created_at');
-
-  if (interestError) throw interestError;
-
-  const {data:participants,error:participantError} = await sb.from('trip_participants')
-    .select('id,trip_id,user_id,confirmed_at');
-  if (participantError) throw participantError;
-
-  const {data:approvedMembers,error:membersError} = await sb.from('profiles')
-    .select('id,display_name,role').eq('status','approved').order('display_name');
-  if (membersError) throw membersError;
-
-  const names = await profilesFor([
-    ...(interests || []).map(i => i.user_id),
-    ...(participants || []).map(i => i.user_id)
-  ]);
-
-  return section('TEAM BASECAMP','Beheer','Beheer leden, reizen en interesse van avonturiers.')
-    + `${me.role === 'admin' ? `
-      <div class="card">
-        <h3>Beheerdersrechten beheren</h3>
-        <p class="muted">Alleen beheerders kunnen hier andere goedgekeurde leden beheerder maken of beheerdersrechten intrekken.</p>
-        ${(approvedMembers || []).map(u => `
-          <div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
-            <div>
-              <b>${esc(u.display_name || 'Avonturier')}</b>
-              <div class="muted">${u.role === 'admin' ? 'Beheerder' : u.role === 'moderator' ? 'Moderator' : 'Lid'}</div>
-            </div>
-            ${u.id === me.id ? '<span class="tag">Jij</span>' : u.role === 'moderator' ? '<span class="tag">Moderator</span>' : u.role === 'admin' ? `<button class="btn light" onclick="changeMemberAdmin('${u.id}',false)">Beheerdersrechten intrekken</button>` : `<button class="btn" onclick="changeMemberAdmin('${u.id}',true)">Beheerder maken</button>`}
-          </div>
-        `).join('') || '<p class="muted">Geen goedgekeurde leden gevonden.</p>'}
-      </div>
-    ` : ''}`
-    + `<div class="card">
-      <b>${pending.length} aanvragen wachten op goedkeuring</b>
-
-      ${pending.map(u => `
-        <p>
-          ${esc(u.display_name || 'Nieuw lid')}
-          · ${new Date(u.created_at).toLocaleDateString('nl-BE')}
-          <button class="btn" onclick="reviewMember('${u.id}','approved')">Goedkeuren</button>
-          <button class="btn light" onclick="reviewMember('${u.id}','rejected')">Weigeren</button>
-        </p>
-      `).join('') || '<p class="muted">Geen openstaande aanvragen.</p>'}
-    </div>
-
-    <div class="card">
-      <h3>Interesse in onze reizen</h3>
-      <p class="muted">Hier zie je welke leden interesse hebben getoond.</p>
-
-      ${trips.map(t => {
-        const people = (interests || []).filter(i => i.trip_id === t.id);
-
-        return `
-          <div style="border-top:1px solid var(--line);padding:12px 0">
-            <b>${esc(t.title)}</b>
-            <span class="tag">${people.length} geïnteresseerden</span>
-            ${people.length
-              ? `<p>${people.map(i => memberLink(i.user_id, names[i.user_id])).join('')}</p>`
-              : '<p class="muted">Nog niemand heeft interesse getoond.</p>'}
-            <div style="margin-top:12px;padding:12px;background:#f7f6f1;border-radius:9px">
-              <b>Bevestigde deelnemers & patches</b>
-              <div class="muted" style="margin:5px 0">${(participants || []).filter(x => x.trip_id === t.id).length} deelnemers bevestigd</div>
-              ${(participants || []).filter(x => x.trip_id === t.id).map(x => `<div class="row" style="padding:5px 0">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('') || '<p class="muted">Nog geen deelnemers bevestigd.</p>'}
-              <div class="field"><label for="participant-${t.id}">Deelnemer bevestigen</label>
-                <select id="participant-${t.id}"><option value="">Kies een lid...</option>${(approvedMembers || []).map(u => `<option value="${u.id}">${esc(u.display_name || 'Avonturier')}</option>`).join('')}</select>
-              </div>
-              <button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
-              <div class="field" style="margin-top:12px"><label>Patchafbeelding voor deze reis</label>
-                ${t.patch_image_url ? `<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:110px;height:110px;object-fit:contain;display:block;margin:6px 0">` : '<p class="muted">Nog geen patch toegevoegd.</p>'}
-                <input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp">
-                <button class="btn light" style="margin-top:7px" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button>
-              </div>
-            </div>
-            <button class="btn light" onclick="archiveTrip('${t.id}')">
-              Verwijderen uit aanbod
-            </button>
-          </div>
-        `;
-      }).join('') || '<p class="muted">Er zijn nog geen gepubliceerde reizen.</p>'}
-    </div>
-
-    <div class="card">
-      <label for="teamPost">Update van het team</label>
-      <textarea id="teamPost" placeholder="Deel een nieuwsbericht..."></textarea>
-      <button class="btn" onclick="publish()">Publiceren</button>
-    </div>
-
-    <div class="card">
-      <h3>Reis toevoegen</h3>
-      <input id="tn" placeholder="Naam reis">
-      <input id="tdest" placeholder="Bestemming" style="margin:8px 0">
-      <input id="ts" type="date">
-      <input id="te" type="date" style="margin:8px 0">
-      <textarea id="tx" placeholder="Omschrijving"></textarea>
-      <input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
-      <button class="btn" onclick="addTrip()">Reis toevoegen en publiceren</button>
-    </div>`;
+function adminMenu(active) {
+  const items = [
+    ['overview','▦','Overzicht'],['members','♙','Leden'],['trips','⌖','Reizen'],
+    ['community','◎','Community'],['admins','⚙','Beheerders']
+  ];
+  return `<div class="row" style="gap:7px;flex-wrap:wrap;margin:16px 0 20px">
+    ${items.map(([key,icon,label]) => `<button class="btn ${active===key?'':'light'}" onclick="setAdminSection('${key}')">${icon} ${label}</button>`).join('')}
+  </div>`;
 }
 
+async function setAdminSection(next) {
+  adminSection = next;
+  if (next !== 'members') { adminMemberPage = 0; adminMemberSearch = ''; }
+  await render();
+}
+
+async function admin() {
+  if (!['admin','moderator'].includes(me.role)) return 'Geen toegang.';
+  const header = section('TEAM BASECAMP','Beheer','Een centraal overzicht van leden, reizen en community.') + adminMenu(adminSection);
+
+  if (adminSection === 'overview') {
+    const [members,pending,trips,past] = await Promise.all([
+      sb.from('profiles').select('id',{count:'exact',head:true}).eq('status','approved'),
+      sb.from('profiles').select('id',{count:'exact',head:true}).eq('status','pending'),
+      sb.from('trips').select('id',{count:'exact',head:true}).eq('status','published'),
+      sb.from('trips').select('id',{count:'exact',head:true}).eq('status','completed')
+    ]);
+    for (const r of [members,pending,trips,past]) if (r.error) throw r.error;
+    return header + `<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px">
+      ${[['Leden',members.count||0,'members'],['Wachtende aanvragen',pending.count||0,'members'],['Gepubliceerde reizen',trips.count||0,'trips'],['Afgelopen reizen',past.count||0,'trips']].map(([label,count,target])=>`<button class="card" style="text-align:left;cursor:pointer" onclick="setAdminSection('${target}')"><div class="muted">${label}</div><div style="font-size:30px;font-weight:700;margin-top:5px">${count}</div><span class="muted">Bekijk overzicht →</span></button>`).join('')}
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Snel naar</h3><p class="muted">Gebruik de onderdelen hierboven om leden te beheren, reizen op te volgen of teamupdates te plaatsen.</p>
+    <button class="btn" onclick="setAdminSection('members')">Leden beheren</button> <button class="btn light" onclick="setAdminSection('trips')">Reizen beheren</button></div>`;
+  }
+
+  if (adminSection === 'members') {
+    const term = adminMemberSearch.trim();
+    let query = sb.from('profiles').select('id,display_name,role,status,created_at',{count:'exact'}).order('display_name').range(adminMemberPage*50,adminMemberPage*50+49);
+    if (term) query = query.ilike('display_name','%'+term+'%');
+    const {data:members,error,count} = await query;
+    if (error) throw error;
+    const {data:pending,error:pendingError} = await sb.from('profiles').select('id,display_name,created_at').eq('status','pending').order('created_at');
+    if (pendingError) throw pendingError;
+    return header + `<div class="card"><h3>Nieuwe aanvragen <span class="tag">${pending.length}</span></h3>
+      ${(pending||[]).map(u=>`<div class="row" style="justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Nieuw lid')}</b><div class="muted">${u.created_at?new Date(u.created_at).toLocaleDateString('nl-BE'):''}</div></div><div><button class="btn" onclick="reviewMember('${u.id}','approved')">Goedkeuren</button> <button class="btn light" onclick="reviewMember('${u.id}','rejected')">Weigeren</button></div></div>`).join('')||'<p class="muted">Geen openstaande aanvragen.</p>'}</div>
+      <div class="card"><h3>Ledenlijst</h3><div class="row" style="gap:8px;flex-wrap:wrap"><input id="adminMemberSearch" placeholder="Zoek op naam..." value="${esc(term)}" style="flex:1;min-width:180px"><button class="btn" onclick="searchAdminMembers()">Zoeken</button><button class="btn light" onclick="clearAdminMemberSearch()">Wissen</button></div>
+      <p class="muted">${count||0} resultaten · maximaal 50 leden per pagina</p>
+      ${(members||[]).map(u=>`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Avonturier')}</b><div class="muted">${u.role==='admin'?'Beheerder':u.role==='moderator'?'Moderator':'Lid'} · ${esc(u.status||'')}</div></div><button class="btn light" onclick="openMemberProfile('${u.id}')">Profiel bekijken</button></div>`).join('')||'<p class="muted">Geen leden gevonden.</p>'}
+      <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn light" ${adminMemberPage===0?'disabled':''} onclick="changeAdminMemberPage(-1)">← Vorige</button><span class="muted">Pagina ${adminMemberPage+1}</span><button class="btn light" ${((adminMemberPage+1)*50)>=(count||0)?'disabled':''} onclick="changeAdminMemberPage(1)">Volgende →</button></div></div>`;
+  }
+
+  if (adminSection === 'admins') {
+    if (me.role !== 'admin') return header + '<div class="card">Alleen beheerders kunnen beheerdersrechten beheren.</div>';
+    const {data:admins,error} = await sb.from('profiles').select('id,display_name,role').eq('status','approved').in('role',['admin','moderator']).order('display_name');
+    if (error) throw error;
+    const {data:members,error:memberError} = await sb.from('profiles').select('id,display_name,role').eq('status','approved').eq('role','member').order('display_name').limit(100);
+    if (memberError) throw memberError;
+    return header + `<div class="card"><h3>Huidige beheerders</h3>${(admins||[]).map(u=>`<div class="row" style="justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Avonturier')}</b><div class="muted">${u.role==='admin'?'Beheerder':'Moderator'}</div></div>${u.id===me.id?'<span class="tag">Jij</span>':u.role==='admin'?`<button class="btn light" onclick="changeMemberAdmin('${u.id}',false)">Rechten intrekken</button>`:'<span class="tag">Moderator</span>'}</div>`).join('')||'<p class="muted">Geen beheerders gevonden.</p>'}</div>
+    <div class="card"><h3>Een lid beheerder maken</h3><p class="muted">Kies een goedgekeurd lid. Alleen jij als beheerder kunt deze wijziging uitvoeren.</p><select id="promoteMember"><option value="">Kies een lid...</option>${(members||[]).map(u=>`<option value="${u.id}">${esc(u.display_name||'Avonturier')}</option>`).join('')}</select><button class="btn" style="margin-top:10px" onclick="promoteSelectedMember()">Beheerder maken</button></div>`;
+  }
+
+  if (adminSection === 'trips') {
+    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date').order('start_date',{ascending:false});
+    if (error) throw error;
+    const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id,created_at');
+    if (interestError) throw interestError;
+    const {data:participants,error:participantError} = await sb.from('trip_participants').select('id,trip_id,user_id,confirmed_at');
+    if (participantError) throw participantError;
+    const names = await profilesFor([...(interests||[]).map(i=>i.user_id),...(participants||[]).map(i=>i.user_id)]);
+    const today = new Date().toISOString().slice(0,10);
+    const drafts = (trips||[]).filter(t=>t.status==='draft');
+    const upcoming = (trips||[]).filter(t=>t.status==='published' && (!t.end_date || t.end_date>=today));
+    const past = (trips||[]).filter(t=>t.status==='completed' || (t.status==='published' && t.end_date && t.end_date<today));
+    const renderTrip = t => { const people=(interests||[]).filter(i=>i.trip_id===t.id); const confirmed=(participants||[]).filter(x=>x.trip_id===t.id); return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
+      <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
+      ${people.length?`<p>${people.map(i=>memberLink(i.user_id,names[i.user_id])).join('')}</p>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+      <details><summary>Deelnemers en patch beheren</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">${confirmed.map(x=>`<div class="row" style="padding:5px 0;justify-content:space-between">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen bevestigde deelnemers.</p>'}
+      <div class="field"><label>Deelnemer bevestigen</label><select id="participant-${t.id}"><option value="">Kies een lid...</option>${memberOptions}</select></div><button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
+      <div class="field" style="margin-top:12px"><label>Patchafbeelding</label>${t.patch_image_url?`<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:100px;height:100px;object-fit:contain">`:''}<input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn light" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button></div></div></details>
+      ${t.status==='published'?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Verwijderen uit aanbod</button>`:''}</div>`; };
+    const sections = [['Gepland',upcoming],['Afgelopen',past],['Concepten',drafts]];
+    const memberResult = await sb.from('profiles').select('id,display_name').eq('status','approved').order('display_name').limit(500);
+    if (memberResult.error) throw memberResult.error;
+    const memberOptions = (memberResult.data||[]).map(u=>`<option value="${u.id}">${esc(u.display_name||'Avonturier')}</option>`).join('');
+    // Add member choices to every participant selector after the page is rendered.
+    return header + `${sections.map(([label,list])=>`<div class="card"><h3>${label} <span class="tag">${list.length}</span></h3>${list.map(renderTrip).join('')||'<p class="muted">Geen reizen in deze categorie.</p>'}</div>`).join('')}
+      <div class="card"><h3>Reis toevoegen</h3><input id="tn" placeholder="Naam reis"><input id="tdest" placeholder="Bestemming" style="margin:8px 0"><input id="ts" type="date"><input id="te" type="date" style="margin:8px 0"><textarea id="tx" placeholder="Omschrijving"></textarea><input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0"><button class="btn light" onclick="addTrip('draft')">Opslaan als concept</button> <button class="btn" onclick="addTrip('published')">Reis publiceren</button></div>`;
+  }
+
+  if (adminSection === 'community') {
+    return header + `<div class="card"><h3>Update van het team</h3><p class="muted">Plaats een bericht dat zichtbaar wordt in de community.</p><label for="teamPost">Bericht</label><textarea id="teamPost" placeholder="Deel een nieuwsbericht..."></textarea><button class="btn" onclick="publish()">Publiceren</button></div>`;
+  }
+  return header;
+}
+
+async function searchAdminMembers() { adminMemberSearch = ($('adminMemberSearch')?.value || '').trim(); adminMemberPage = 0; await render(); }
+async function clearAdminMemberSearch() { adminMemberSearch = ''; adminMemberPage = 0; await render(); }
+async function changeAdminMemberPage(delta) { adminMemberPage = Math.max(0,adminMemberPage+delta); await render(); }
+async function promoteSelectedMember() { const id=$('promoteMember')?.value; if(!id) return alert('Kies eerst een lid.'); await changeMemberAdmin(id,true); }
 
 
 async function changeMemberAdmin(userId, makeAdmin) {
@@ -2088,7 +2069,7 @@ async function publish() {
   else await render();
 }
 
-async function addTrip() {
+async function addTrip(status = 'published') {
   const title = $('tn').value.trim();
   if (!title) return alert('Vul een reisnaam in.');
 
@@ -2127,7 +2108,7 @@ async function addTrip() {
     start_date:$('ts').value || null,
     end_date:$('te').value || null,
     image_url:imageUrl,
-    status:'published'
+    status:status === 'draft' ? 'draft' : 'published'
   });
 
   if (error) alert(error.message);
