@@ -428,73 +428,24 @@ async function render() {
   }
 }
 async function unreadNotificationsCount() {
-  const {count, error} = await sb
-    .from('trip_discussion_notifications')
-    .select('id', {count: 'exact', head: true})
-    .eq('recipient_id', me.id)
-    .is('read_at', null);
+  const [tripResult, postResult] = await Promise.all([
+    sb.from('trip_discussion_notifications')
+      .select('id', {count:'exact', head:true})
+      .eq('recipient_id', me.id)
+      .is('read_at', null),
 
-  if (error) throw error;
+    sb.from('post_comment_notifications')
+      .select('id', {count:'exact', head:true})
+      .eq('recipient_id', me.id)
+      .is('read_at', null)
+  ]);
 
-  return count || 0;
-}
-async function profilesFor(ids) {
-  if (!ids.length) return {};
+  if (tripResult.error) throw tripResult.error;
+  if (postResult.error) throw postResult.error;
 
-  const {data,error} = await sb.from('profiles')
-    .select('id,display_name')
-    .in('id',[...new Set(ids)]);
-
-  if (error) throw error;
-
-  return Object.fromEntries(
-    (data || []).map(x => [x.id,x.display_name || 'Avonturier'])
-  );
-}
-async function updateNotificationBadge() {
-  try {
-    const count = await unreadNotificationsCount();
-
-    ['notificationCount', 'notificationCountMobile'].forEach(id => {
-      const badge = document.getElementById(id);
-      if (!badge) return;
-
-      badge.textContent = count;
-      badge.classList.toggle('hidden', count === 0);
-    });
-
-    return count;
-  } catch (e) {
-    console.error('Meldingen tellen mislukt:', e);
-    return null;
-  }
+  return (tripResult.count || 0) + (postResult.count || 0);
 }
 
-function startNotificationRefresh() {
-  if (notificationRefreshTimer) {
-    clearInterval(notificationRefreshTimer);
-  }
-
-  // Controleer regelmatig op nieuwe meldingen zolang de gebruiker is ingelogd.
-  notificationRefreshTimer = setInterval(async () => {
-    if (!me || document.hidden) return;
-
-    const count = await updateNotificationBadge();
-
-    // Als de meldingenpagina openstaat, toon dan ook de nieuwste meldingen.
-    if (count !== null && page === 'notifications') {
-      await render();
-    }
-  }, 15000);
-}
-
-// Werk meldingen meteen bij wanneer de gebruiker terugkeert naar BASECAMP.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && me) {
-    updateNotificationBadge();
-    if (page === 'notifications') render();
-  }
-});
 
 /* COMMUNITYBERICHTEN EN FOTO'S */
 
