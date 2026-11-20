@@ -936,7 +936,98 @@ async function toggleTripInterest(tripId, interested) {
   }
 }
 
+async function openTripDiscussion(tripId) {
+  selectedTripId = tripId;
+  await go('tripDiscussion');
+}
 
+async function tripDiscussion() {
+  if (!selectedTripId) return 'Geen reis geselecteerd.';
+
+  const {data: trip, error: tripError} = await sb
+    .from('trips')
+    .select('id,title,destination')
+    .eq('id', selectedTripId)
+    .eq('status', 'published')
+    .maybeSingle();
+
+  if (tripError) throw tripError;
+  if (!trip) return 'Deze reis is niet beschikbaar.';
+
+  const {data: messages, error} = await sb
+    .from('trip_discussions')
+    .select('id,trip_id,user_id,content,created_at')
+    .eq('trip_id', selectedTripId)
+    .order('created_at', {ascending: true});
+
+  if (error) throw error;
+
+  const names = await profilesFor((messages || []).map(m => m.user_id));
+
+  return section(
+    'VRAGEN & ERVARINGEN',
+    trip.title,
+    'Stel je vragen en wissel ideeën uit met andere avonturiers.'
+  ) + `
+    <button class="btn light" onclick="go('discover')">
+      ← Terug naar avonturen
+    </button>
+
+    <div class="card">
+      ${(messages || []).map(m => `
+        <article style="border-bottom:1px solid var(--line);padding:10px 0">
+          <div class="feedtop">
+            <b>${esc(names[m.user_id] || 'Avonturier')}</b>
+            · ${new Date(m.created_at).toLocaleString('nl-BE')}
+          </div>
+          <p style="white-space:pre-wrap">${esc(m.content)}</p>
+          ${m.user_id === me.id || ['admin','moderator'].includes(me.role) ? `
+            <button class="btn light" onclick="deleteTripDiscussion('${m.id}')">
+              Verwijderen
+            </button>
+          ` : ''}
+        </article>
+      `).join('') || '<p class="muted">Er zijn nog geen berichten. Stel gerust de eerste vraag!</p>'}
+    </div>
+
+    <div class="card">
+      <label for="tripDiscussionText">Jouw vraag of bericht</label>
+      <textarea id="tripDiscussionText" placeholder="Wat wil je weten over dit avontuur?"></textarea>
+      <button class="btn" onclick="sendTripDiscussion()">Bericht plaatsen</button>
+    </div>
+  `;
+}
+
+async function sendTripDiscussion() {
+  const input = $('tripDiscussionText');
+  const content = input?.value.trim();
+
+  if (!content) return alert('Schrijf eerst een bericht.');
+
+  const {error} = await sb.from('trip_discussions').insert({
+    trip_id: selectedTripId,
+    user_id: me.id,
+    content
+  });
+
+  if (error) {
+    alert('Bericht plaatsen mislukt: ' + error.message);
+  } else {
+    await render();
+  }
+}
+
+async function deleteTripDiscussion(id) {
+  if (!confirm('Wil je dit bericht verwijderen?')) return;
+
+  const {error} = await sb.from('trip_discussions').delete().eq('id', id);
+
+  if (error) {
+    alert('Verwijderen mislukt: ' + error.message);
+  } else {
+    await render();
+  }
+}
 /* CHATGROEPEN */
 
 async function chat() {
