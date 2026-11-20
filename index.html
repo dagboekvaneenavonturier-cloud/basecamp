@@ -823,6 +823,7 @@ async function home() {
         ${(trips || []).map(t => `
           <div class="card">
             <span class="tag">${esc(t.destination || 'Avontuur')}</span>
+            ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" style="width:100%;height:190px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
             <h3>${esc(t.title)}</h3>
             <p class="muted">
               ${esc(t.description || 'Ontdek dit avontuur van Dagboek van een Avonturier.')}
