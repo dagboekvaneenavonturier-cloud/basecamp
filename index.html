@@ -896,9 +896,14 @@ async function discover() {
           <p class="muted">${esc(t.description || '')}</p>
 
           <button class="btn ${interested ? 'light' : ''}"
-            onclick="toggleTripInterest('${t.id}',${interested})">
-            ${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}
-          </button>
+  onclick="toggleTripInterest('${t.id}',${interested})">
+  ${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}
+</button>
+
+<button class="btn light"
+  onclick="openTripDiscussion('${t.id}')">
+  Vragen & gesprek →
+</button>
         </div>
       `;
     }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
