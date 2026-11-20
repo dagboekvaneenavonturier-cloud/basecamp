@@ -1596,9 +1596,37 @@ async function publish() {
   else await render();
 }
 
-async function addTrip() {
+asynasync function addTrip() {
   const title = $('tn').value.trim();
   if (!title) return alert('Vul een reisnaam in.');
+
+  const imageFile = $('tripImage').files[0];
+  let imageUrl = null;
+
+  if (imageFile) {
+    if (!imageFile.type.startsWith('image/')) {
+      return alert('Selecteer een geldige afbeelding.');
+    }
+
+    if (imageFile.size > 8 * 1024 * 1024) {
+      return alert('De foto mag maximaal 8 MB groot zijn.');
+    }
+
+    const extension = imageFile.name.split('.').pop().toLowerCase();
+    const path = me.id + '/trips/' + Date.now() + '.' + extension;
+
+    const {error: uploadError} = await sb.storage
+      .from('post-images')
+      .upload(path, imageFile);
+
+    if (uploadError) {
+      return alert('Foto uploaden mislukt: ' + uploadError.message);
+    }
+
+    imageUrl = sb.storage
+      .from('post-images')
+      .getPublicUrl(path).data.publicUrl;
+  }
 
   const {error} = await sb.from('trips').insert({
     title,
@@ -1606,11 +1634,13 @@ async function addTrip() {
     description:$('tx').value,
     start_date:$('ts').value || null,
     end_date:$('te').value || null,
+    image_url:imageUrl,
     status:'published'
   });
 
   if (error) alert(error.message);
   else await render();
+}
 }
 
 /* OPSTARTEN */
