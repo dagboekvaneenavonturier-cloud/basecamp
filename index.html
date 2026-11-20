@@ -1954,7 +1954,7 @@ async function admin() {
   if (participantError) throw participantError;
 
   const {data:approvedMembers,error:membersError} = await sb.from('profiles')
-    .select('id,display_name').eq('status','approved').order('display_name');
+    .select('id,display_name,role').eq('status','approved').order('display_name');
   if (membersError) throw membersError;
 
   const names = await profilesFor([
@@ -1963,6 +1963,21 @@ async function admin() {
   ]);
 
   return section('TEAM BASECAMP','Beheer','Beheer leden, reizen en interesse van avonturiers.')
+    + `${me.role === 'admin' ? `
+      <div class="card">
+        <h3>Beheerdersrechten beheren</h3>
+        <p class="muted">Alleen beheerders kunnen hier andere goedgekeurde leden beheerder maken of beheerdersrechten intrekken.</p>
+        ${(approvedMembers || []).map(u => `
+          <div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+            <div>
+              <b>${esc(u.display_name || 'Avonturier')}</b>
+              <div class="muted">${u.role === 'admin' ? 'Beheerder' : u.role === 'moderator' ? 'Moderator' : 'Lid'}</div>
+            </div>
+            ${u.id === me.id ? '<span class="tag">Jij</span>' : u.role === 'moderator' ? '<span class="tag">Moderator</span>' : u.role === 'admin' ? `<button class="btn light" onclick="changeMemberAdmin('${u.id}',false)">Beheerdersrechten intrekken</button>` : `<button class="btn" onclick="changeMemberAdmin('${u.id}',true)">Beheerder maken</button>`}
+          </div>
+        `).join('') || '<p class="muted">Geen goedgekeurde leden gevonden.</p>'}
+      </div>
+    ` : ''}`
     + `<div class="card">
       <b>${pending.length} aanvragen wachten op goedkeuring</b>
 
@@ -2031,6 +2046,25 @@ async function admin() {
 }
 
 
+
+async function changeMemberAdmin(userId, makeAdmin) {
+  if (me.role !== 'admin') return alert('Alleen beheerders mogen beheerdersrechten wijzigen.');
+  const action = makeAdmin ? 'beheerder maken' : 'de beheerdersrechten intrekken';
+  if (!confirm('Wil je dit lid ' + action + '?')) return;
+
+  const {error} = await sb.rpc('set_member_admin', {
+    target_user_id:userId,
+    make_admin:makeAdmin
+  });
+
+  if (error) {
+    alert('Beheerdersrechten wijzigen lukte niet: ' + error.message);
+  } else {
+    alert(makeAdmin ? 'Dit lid is nu beheerder.' : 'De beheerdersrechten zijn ingetrokken.');
+    await refreshAuth();
+    await go('admin');
+  }
+}
 
 async function reviewMember(id,status) {
   const {error} = await sb.from('profiles')
