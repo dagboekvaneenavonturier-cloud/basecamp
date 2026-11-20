@@ -169,7 +169,7 @@ main{padding:18px 14px 85px}
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCount" class="notification-badge hidden"></span>
 </button>
-<button data-page="chat">☏ Chatgroepen</button>
+<button data-page="chat">☏ Chats</button>
 <button data-page="profile">◉ Mijn profiel</button>
       <button data-page="admin" id="adminNav" class="hidden">⚙ Beheer</button>
     </nav>
@@ -187,7 +187,7 @@ main{padding:18px 14px 85px}
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
-<button data-page="chat">☏ Chatgroepen</button>
+<button data-page="chat">☏ Chats</button>
   <button data-page="profile">◉<br>Profiel</button>
 </div>
 
@@ -208,6 +208,7 @@ let me = null;
 let page = 'home';
 let room = null;
 let chatCategory = 'regular';
+let directRoom = null;
 let chatChannel = null;
 let selectedTripId = null;
 let selectedProfileId = null;
@@ -1666,124 +1667,139 @@ async function chat() {
   const {data:groups,error} = await sb.from('groups')
     .select('id,name,description,is_private,trip_id')
     .order('name');
-
   if (error) throw error;
 
-  if (!groups.length) {
-    return section('PRAAT MEE','Groepen','Er zijn nog geen groepen aangemaakt.');
+  const regularGroups = (groups || []).filter(g => !g.is_private);
+  let privateGroups = (groups || []).filter(g => g.is_private);
+
+  // Sorteer privéreischats op eerstvolgende reisdatum: komende reizen bovenaan.
+  const tripIds = privateGroups.map(g => g.trip_id).filter(Boolean);
+  if (tripIds.length) {
+    const {data:tripRows,error:tripError} = await sb.from('trips')
+      .select('id,start_date,end_date').in('id',tripIds);
+    if (tripError) throw tripError;
+    const tripDates = Object.fromEntries((tripRows || []).map(t => [t.id,t.start_date || '9999-12-31']));
+    const today = localDateISO();
+    privateGroups.sort((a,b) => {
+      const da = tripDates[a.trip_id] || '9999-12-31';
+      const db = tripDates[b.trip_id] || '9999-12-31';
+      const aFuture = da >= today;
+      const bFuture = db >= today;
+      if (aFuture !== bFuture) return aFuture ? -1 : 1;
+      return aFuture ? da.localeCompare(db) : db.localeCompare(da);
+    });
   }
 
-  const regularGroups = groups.filter(g => !g.is_private);
-  const privateGroups = groups.filter(g => g.is_private);
-  let visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
-
-  // Kies automatisch een beschikbare categorie als de huidige leeg is.
-  if (!visibleGroups.length && groups.length) {
-    chatCategory = chatCategory === 'private' ? 'regular' : 'private';
-    visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
-  }
-  if (!room || !visibleGroups.some(g => g.id === room)) {
-    room = visibleGroups[0]?.id || null;
-  }
-
-  const {data:members} = await sb.from('group_members')
-    .select('group_id')
-    .eq('user_id',me.id);
-
+  const {data:members} = await sb.from('group_members').select('group_id').eq('user_id',me.id);
   const joined = new Set((members || []).map(m => m.group_id));
-  const group = groups.find(x => x.id === room);
 
+  const {data:hiddenRows,error:hiddenError} = await sb.from('direct_conversation_hidden')
+    .select('conversation_id').eq('user_id',me.id);
+  if (hiddenError) throw hiddenError;
+  const hiddenIds = new Set((hiddenRows || []).map(x => x.conversation_id));
+
+  const {data:conversations,error:conversationError} = await sb.from('direct_conversations')
+    .select('id,user_one_id,user_two_id,last_message_at')
+    .order('last_message_at',{ascending:false});
+  if (conversationError) throw conversationError;
+  const directConversations = (conversations || []).filter(c => !hiddenIds.has(c.id));
+  const people = await profilesFor(directConversations.map(c => c.user_one_id === me.id ? c.user_two_id : c.user_one_id));
+
+  const tabHtml = `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
+    <button class="${chatCategory === 'regular' ? 'active' : ''}" onclick="setChatCategory('regular')">Gewone chats <span class="tag">${regularGroups.length}</span></button>
+    <button class="${chatCategory === 'private' ? 'active' : ''}" onclick="setChatCategory('private')">🔒 Privéreischats <span class="tag">${privateGroups.length}</span></button>
+    <button class="${chatCategory === 'direct' ? 'active' : ''}" onclick="setChatCategory('direct')">✉️ Privéberichten <span class="tag">${directConversations.length}</span></button>
+  </div>`;
+
+  if (chatCategory === 'direct') {
+    if (!directRoom || !directConversations.some(c => c.id === directRoom)) directRoom = directConversations[0]?.id || null;
+    const selected = directConversations.find(c => c.id === directRoom);
+    let directMessages = [];
+    let otherId = null;
+    if (selected) {
+      otherId = selected.user_one_id === me.id ? selected.user_two_id : selected.user_one_id;
+      const {data,error:dmError} = await sb.from('direct_messages')
+        .select('id,sender_id,content,created_at')
+        .eq('conversation_id',selected.id).order('created_at').limit(100);
+      if (dmError) throw dmError;
+      directMessages = data || [];
+    }
+    const directNames = await profilesFor(directMessages.map(m => m.sender_id));
+    const otherPerson = otherId ? people[otherId] : null;
+    const html = section('PRAAT MEE','Privéberichten','Persoonlijke gesprekken tussen jou en andere BASECAMP-leden.') + tabHtml + `<div class="chat">
+      <div class="rooms">${directConversations.map(c => {
+        const uid = c.user_one_id === me.id ? c.user_two_id : c.user_one_id;
+        const person = people[uid];
+        return `<button class="${c.id === directRoom ? 'active' : ''}" onclick="selectDirectConversation('${c.id}')">${profileIdentity(person,uid)}<br><small class="muted">${new Date(c.last_message_at).toLocaleDateString('nl-BE')}</small></button>`;
+      }).join('') || '<p class="muted" style="padding:8px">Je hebt nog geen privégesprekken. Open het profiel van een lid om een gesprek te starten.</p>'}</div>
+      <div class="chatmain">${selected ? `<div style="padding:13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${profileIdentity(otherPerson,otherId)}</b><button class="btn light" onclick="hideDirectConversation('${selected.id}')">Verwijder uit mijn lijst</button></div>` : '<div class="muted" style="padding:20px">Kies een gesprek of start een nieuw gesprek via het profiel van een lid.</div>'}
+        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${esc(m.content)}${m.sender_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+        ${selected ? `<div class="send"><input id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div>` : ''}
+      </div></div>`;
+    setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
+    if (selected) chatChannel = sb.channel('basecamp-direct-' + selected.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.' + selected.id},() => { if (page === 'chat' && chatCategory === 'direct') render(); })
+      .subscribe();
+    return html;
+  }
+
+  const visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
+  if (!room || !visibleGroups.some(g => g.id === room)) room = visibleGroups[0]?.id || null;
+  const group = (groups || []).find(x => x.id === room);
   let messages = [];
   if (group) {
     const {data:messageRows,error:messageError} = await sb.from('messages')
-      .select('id,user_id,content,created_at')
-      .eq('group_id',room)
-      .order('created_at')
-      .limit(100);
+      .select('id,user_id,content,created_at').eq('group_id',room).order('created_at').limit(100);
     if (messageError) throw messageError;
     messages = messageRows || [];
   }
-
   const names = await profilesFor(messages.map(m => m.user_id));
   const member = room ? joined.has(room) : false;
-
-  const html = section(
-    'PRAAT MEE',
-    'Groepen & chat',
-    'Kies een onderwerp en praat mee met andere avonturiers.'
-  ) + `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">
-    <button class="${chatCategory === 'regular' ? 'active' : ''}" onclick="setChatCategory('regular')">
-      Gewone chats <span class="tag">${regularGroups.length}</span>
-    </button>
-    <button class="${chatCategory === 'private' ? 'active' : ''}" onclick="setChatCategory('private')">
-      🔒 Privéreischats <span class="tag">${privateGroups.length}</span>
-    </button>
-  </div>
-  <div class="chat">
-    <div class="rooms">
-      ${visibleGroups.map(g => `
-        <button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')">
-          <b>${esc(g.name)}</b><br>
-          <small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small>
-        </button>
-      `).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}
-    </div>
-
-    <div class="chatmain">
-      ${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">
-        ${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}
-      </div>` : '<div style="padding:20px" class="muted">Selecteer een chat zodra er een groep beschikbaar is.</div>'}
-
-      <div class="msgs" id="msgs">
-        ${(messages || []).map(m => `
-          <div class="bubble ${m.user_id === me.id ? 'mine' : ''}">
-            ${profileIdentity(names[m.user_id], m.user_id)}<br>
-            <small class="muted">
-              ${new Date(m.created_at).toLocaleString('nl-BE',{
-                day:'2-digit',
-                month:'2-digit',
-                hour:'2-digit',
-                minute:'2-digit'
-              })}
-            </small><br>
-            ${esc(m.content)}
-            ${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}
-          </div>
-        `).join('')}
-      </div>
-
-      ${group && (member || ['admin','moderator'].includes(me.role))
-        ? `<div class="send">
-            <input id="chatText" placeholder="Schrijf een bericht..."
-              onkeydown="if(event.key==='Enter')sendMessage()">
-            <button class="btn" onclick="sendMessage()">Verstuur</button>
-          </div>`
-        : group ? `<div class="send">
-            <button class="btn" onclick="joinGroup('${room}')">
-              Aansluiten bij deze groep
-            </button>
-          </div>` : ''
-      }
-    </div>
-  </div>`;
-
-  setTimeout(() => {
-    const el = $('msgs');
-    if (el) el.scrollTop = el.scrollHeight;
-  },0);
-
-  chatChannel = sb.channel('basecamp-chat-' + room)
-    .on('postgres_changes',{
-      event:'INSERT',
-      schema:'public',
-      table:'messages',
-      filter:'group_id=eq.' + room
-    },() => {
-      if (page === 'chat') render();
-    })
-    .subscribe();
-
+  const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
+    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(g.name)}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
+    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
+      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${esc(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><button class="btn" onclick="sendMessage()">Verstuur</button></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
+    </div></div>`;
+  setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
+  if (group) chatChannel = sb.channel('basecamp-chat-' + room)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'group_id=eq.' + room},() => { if (page === 'chat') render(); }).subscribe();
   return html;
+}
+
+async function startDirectChat(userId) {
+  if (!userId || userId === me.id) return;
+  const {data,error} = await sb.rpc('start_direct_conversation',{p_other_user_id:userId});
+  if (error) { alert('Privégesprek starten lukte niet: ' + error.message); return; }
+  directRoom = data;
+  chatCategory = 'direct';
+  await go('chat');
+}
+
+async function selectDirectConversation(id) { directRoom = id; await render(); }
+
+async function hideDirectConversation(id) {
+  if (!confirm('Wil je dit gesprek uit jouw chatlijst verwijderen? De andere deelnemer behoudt het gesprek.')) return;
+  const {error} = await sb.from('direct_conversation_hidden').insert({conversation_id:id,user_id:me.id});
+  if (error && error.code !== '23505') { alert('Gesprek verwijderen lukte niet: ' + error.message); return; }
+  directRoom = null;
+  await render();
+}
+
+async function sendDirectMessage() {
+  const input = $('directText');
+  const content = input?.value.trim();
+  if (!content || !directRoom) return;
+  const {error} = await sb.from('direct_messages').insert({conversation_id:directRoom,sender_id:me.id,content});
+  if (error) { alert('Bericht versturen lukte niet: ' + error.message); return; }
+  await render();
+}
+
+async function deleteDirectMessage(id) {
+  if (!confirm('Wil je dit privébericht definitief verwijderen?')) return;
+  const {error} = await sb.from('direct_messages').delete().eq('id',id).eq('sender_id',me.id);
+  if (error) { alert('Bericht verwijderen lukte niet: ' + error.message); return; }
+  await render();
 }
 
 async function createChatGroup() {
@@ -1951,6 +1967,7 @@ async function memberProfile() {
     + `<button class="btn light" onclick="go('discover')">← Terug</button>
       <div class="card">${avatarMarkup(person.avatar_url, person.display_name, 'profile-avatar')}
       <h3>${esc(person.display_name || 'Avonturier')}</h3>
+      <button class="btn" style="margin:8px 0 14px" onclick="startDirectChat('${person.id}')">✉️ Stuur privébericht</button>
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
       <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
