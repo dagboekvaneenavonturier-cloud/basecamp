@@ -1651,6 +1651,32 @@ async function addTrip() {
 }
 
 
+async function archiveTrip(tripId) {
+  if (!['admin','moderator'].includes(me.role)) {
+    return alert('Geen toegang.');
+  }
+
+  const confirmed = confirm(
+    'Wil je deze reis uit het aanbod verwijderen? De reisgegevens en gesprekken blijven bewaard.'
+  );
+
+  if (!confirmed) return;
+
+  const {error} = await sb
+    .from('trips')
+    .update({status:'archived'})
+    .eq('id', tripId)
+    .eq('status', 'published');
+
+  if (error) {
+    alert('Reis verwijderen mislukt: ' + error.message);
+    return;
+  }
+
+  alert('De reis is uit het aanbod verwijderd.');
+  await render();
+}
+
 /* OPSTARTEN */
 
 async function boot() {
