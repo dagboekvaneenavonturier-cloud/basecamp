@@ -1,6 +1,7 @@
 
 
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -428,7 +429,7 @@ async function render() {
   }
 }
 async function unreadNotificationsCount() {
-  const [tripResult, postResult] = await Promise.all([
+  const [tripResult, postResult, chatResult] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
@@ -437,13 +438,21 @@ async function unreadNotificationsCount() {
     sb.from('post_comment_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
+      .is('read_at', null),
+
+    sb.from('chat_message_notifications')
+      .select('id', {count:'exact', head:true})
+      .eq('recipient_id', me.id)
       .is('read_at', null)
   ]);
 
   if (tripResult.error) throw tripResult.error;
   if (postResult.error) throw postResult.error;
+  if (chatResult.error) throw chatResult.error;
 
-  return (tripResult.count || 0) + (postResult.count || 0);
+  return (tripResult.count || 0) +
+    (postResult.count || 0) +
+    (chatResult.count || 0);
 }
 
 
@@ -1081,7 +1090,8 @@ async function tripDiscussion() {
 async function notifications() {
   const [
     {data: tripItems, error: tripError},
-    {data: postItems, error: postError}
+    {data: postItems, error: postError},
+    {data: chatItems, error: chatError}
   ] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id,trip_id,discussion_id,created_at,read_at')
@@ -1093,20 +1103,28 @@ async function notifications() {
       .select('id,post_id,comment_id,created_at,read_at')
       .eq('recipient_id', me.id)
       .is('read_at', null)
+      .order('created_at', {ascending: false}),
+
+    sb.from('chat_message_notifications')
+      .select('id,group_id,message_id,created_at,read_at')
+      .eq('recipient_id', me.id)
+      .is('read_at', null)
       .order('created_at', {ascending: false})
   ]);
 
   if (tripError) throw tripError;
   if (postError) throw postError;
+  if (chatError) throw chatError;
 
   const trips = tripItems || [];
   const posts = postItems || [];
+  const chats = chatItems || [];
 
-  if (trips.length === 0 && posts.length === 0) {
+  if (trips.length === 0 && posts.length === 0 && chats.length === 0) {
     return section(
       'BASECAMP',
       'Meldingen',
-      'Hier verschijnen nieuwe reacties op reisgesprekken en communityberichten.'
+      'Hier verschijnen nieuwe reacties op reisgesprekken, communityberichten en chatgroepen.'
     ) + `
       <div class="card">
         <p class="muted">Je hebt momenteel geen ongelezen meldingen.</p>
@@ -1116,6 +1134,7 @@ async function notifications() {
 
   let tripHtml = '';
   let postHtml = '';
+  let chatHtml = '';
 
   if (trips.length > 0) {
     const tripIds = [...new Set(trips.map(n => n.trip_id))];
@@ -1230,13 +1249,69 @@ async function notifications() {
     `;
   }
 
+  if (chats.length > 0) {
+    const groupIds = [...new Set(chats.map(n => n.group_id))];
+    const messageIds = [...new Set(chats.map(n => n.message_id))];
+
+    const [
+      {data: groupData, error: groupsError},
+      {data: chatMessages, error: chatMessagesError}
+    ] = await Promise.all([
+      sb.from('groups')
+        .select('id,name')
+        .in('id', groupIds),
+      sb.from('messages')
+        .select('id,content,user_id')
+        .in('id', messageIds)
+    ]);
+
+    if (groupsError) throw groupsError;
+    if (chatMessagesError) throw chatMessagesError;
+
+    const groupMap = Object.fromEntries(
+      (groupData || []).map(g => [g.id, g])
+    );
+    const messageMap = Object.fromEntries(
+      (chatMessages || []).map(m => [m.id, m])
+    );
+    const names = await profilesFor(
+      (chatMessages || []).map(m => m.user_id)
+    );
+
+    chatHtml = `
+      <div class="card">
+        <h3>Chatgroepen</h3>
+        ${chats.map(n => {
+          const group = groupMap[n.group_id];
+          const message = messageMap[n.message_id];
+
+          if (!group || !message) return '';
+
+          return `
+            <article style="border-bottom:1px solid var(--line);padding:12px 0">
+              <div class="feedtop">
+                <b>${esc(names[message.user_id] || 'Avonturier')}</b>
+                <span class="badge">Nieuw bericht</span>
+              </div>
+              <p><b>${esc(group.name)}</b></p>
+              <p>${esc(message.content)}</p>
+              <button class="btn light"
+                onclick="openChatNotification('${n.id}','${n.group_id}')">
+                Open chat →
+              </button>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   return section(
     'BASECAMP',
     'Meldingen',
-    'Blijf op de hoogte van gesprekken en reacties in BASECAMP.'
-  ) + tripHtml + postHtml;
+    'Blijf op de hoogte van reisgesprekken, communityreacties en chatberichten.'
+  ) + tripHtml + postHtml + chatHtml;
 }
-
 
 async function openTripNotification(notificationId, tripId) {
   const {error} = await sb
@@ -1267,6 +1342,22 @@ async function openPostNotification(notificationId, postId) {
   }
 
   await go('community');
+}
+
+async function openChatNotification(notificationId, groupId) {
+  const {error} = await sb
+    .from('chat_message_notifications')
+    .update({read_at: new Date().toISOString()})
+    .eq('id', notificationId)
+    .eq('recipient_id', me.id);
+
+  if (error) {
+    alert('Melding openen mislukt: ' + error.message);
+    return;
+  }
+
+  room = groupId;
+  await go('chat');
 }
 
 async function sendTripDiscussion() {
@@ -1664,7 +1755,7 @@ async function archiveTrip(tripId) {
 
   const {error} = await sb
     .from('trips')
-    .update({status:'archived'})
+    .update({status:'completed'})
     .eq('id', tripId)
     .eq('status', 'published');
 
