@@ -936,7 +936,7 @@ async function addComment(post_id) {
 
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
-    .select('id,title,destination,description,start_date,end_date,status')
+   .select('id,title,destination,description,start_date,end_date,status,image_url')
     .eq('status','published')
     .order('start_date');
 
