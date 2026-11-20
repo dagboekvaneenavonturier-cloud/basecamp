@@ -1196,6 +1196,21 @@ async function openTripNotification(notificationId, tripId) {
   await go('tripDiscussion');
 }
 
+async function openPostNotification(notificationId, postId) {
+  const {error} = await sb
+    .from('post_comment_notifications')
+    .update({read_at: new Date().toISOString()})
+    .eq('id', notificationId)
+    .eq('recipient_id', me.id);
+
+  if (error) {
+    alert('Melding openen mislukt: ' + error.message);
+    return;
+  }
+
+  await go('community');
+}
+
 async function sendTripDiscussion() {
   const input = $('tripDiscussionText');
   const content = input?.value.trim();
