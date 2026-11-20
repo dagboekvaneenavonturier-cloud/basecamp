@@ -2004,18 +2004,35 @@ async function admin() {
 
   if (adminSection === 'members') {
     const term = adminMemberSearch.trim();
-    let query = sb.from('profiles').select('id,display_name,role,status,created_at',{count:'exact'}).order('display_name').range(adminMemberPage*50,adminMemberPage*50+49);
-    if (term) query = query.ilike('display_name','%'+term+'%');
-    const {data:members,error,count} = await query;
-    if (error) throw error;
+    let members = [];
+    let count = 0;
+    if (me.role === 'admin') {
+      // E-mailadressen worden uitsluitend via de beveiligde admin-RPC opgehaald.
+      const {data,error} = await sb.rpc('admin_search_members', {
+        search_term: term,
+        page_size: 50,
+        page_offset: adminMemberPage * 50
+      });
+      if (error) throw error;
+      members = data || [];
+      count = Number(members[0]?.total_count || 0);
+    } else {
+      // Moderators kunnen leden op naam zoeken, maar krijgen geen e-mailadressen.
+      let query = sb.from('profiles').select('id,display_name,role,status,created_at',{count:'exact'}).order('display_name').range(adminMemberPage*50,adminMemberPage*50+49);
+      if (term) query = query.ilike('display_name','%'+term+'%');
+      const result = await query;
+      if (result.error) throw result.error;
+      members = result.data || [];
+      count = result.count || 0;
+    }
     const {data:pending,error:pendingError} = await sb.from('profiles').select('id,display_name,created_at').eq('status','pending').order('created_at');
     if (pendingError) throw pendingError;
     return header + `<div class="card"><h3>Nieuwe aanvragen <span class="tag">${pending.length}</span></h3>
       ${(pending||[]).map(u=>`<div class="row" style="justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Nieuw lid')}</b><div class="muted">${u.created_at?new Date(u.created_at).toLocaleDateString('nl-BE'):''}</div></div><div><button class="btn" onclick="reviewMember('${u.id}','approved')">Goedkeuren</button> <button class="btn light" onclick="reviewMember('${u.id}','rejected')">Weigeren</button></div></div>`).join('')||'<p class="muted">Geen openstaande aanvragen.</p>'}</div>
-      <div class="card"><h3>Ledenlijst</h3><div class="row" style="gap:8px;flex-wrap:wrap"><input id="adminMemberSearch" placeholder="Zoek op naam..." value="${esc(term)}" style="flex:1;min-width:180px"><button class="btn" onclick="searchAdminMembers()">Zoeken</button><button class="btn light" onclick="clearAdminMemberSearch()">Wissen</button></div>
-      <p class="muted">${count||0} resultaten · maximaal 50 leden per pagina</p>
-      ${(members||[]).map(u=>`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Avonturier')}</b><div class="muted">${u.role==='admin'?'Beheerder':u.role==='moderator'?'Moderator':'Lid'} · ${esc(u.status||'')}</div></div><button class="btn light" onclick="openMemberProfile('${u.id}')">Profiel bekijken</button></div>`).join('')||'<p class="muted">Geen leden gevonden.</p>'}
-      <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn light" ${adminMemberPage===0?'disabled':''} onclick="changeAdminMemberPage(-1)">← Vorige</button><span class="muted">Pagina ${adminMemberPage+1}</span><button class="btn light" ${((adminMemberPage+1)*50)>=(count||0)?'disabled':''} onclick="changeAdminMemberPage(1)">Volgende →</button></div></div>`;
+      <div class="card"><h3>Ledenlijst</h3><div class="row" style="gap:8px;flex-wrap:wrap"><input id="adminMemberSearch" placeholder="${me.role==='admin'?'Zoek op naam of e-mailadres...':'Zoek op naam...'}" value="${esc(term)}" style="flex:1;min-width:180px"><button class="btn" onclick="searchAdminMembers()">Zoeken</button><button class="btn light" onclick="clearAdminMemberSearch()">Wissen</button></div>
+      <p class="muted">${count} resultaten · maximaal 50 leden per pagina${me.role==='admin'?' · zoeken op naam en e-mailadres':''}</p>
+      ${(members||[]).map(u=>`<div class="row" style="justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(u.display_name||'Avonturier')}</b><div class="muted">${me.role==='admin' && u.email?esc(u.email)+' · ':''}${u.role==='admin'?'Beheerder':u.role==='moderator'?'Moderator':'Lid'} · ${esc(u.status||'')}</div></div><button class="btn light" onclick="openMemberProfile('${u.id}')">Profiel bekijken</button></div>`).join('')||'<p class="muted">Geen leden gevonden.</p>'}
+      <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn light" ${adminMemberPage===0?'disabled':''} onclick="changeAdminMemberPage(-1)">← Vorige</button><span class="muted">Pagina ${adminMemberPage+1}</span><button class="btn light" ${((adminMemberPage+1)*50)>=count?'disabled':''} onclick="changeAdminMemberPage(1)">Volgende →</button></div></div>`;
   }
 
   if (adminSection === 'admins') {
