@@ -482,6 +482,19 @@ function memberLink(userId, displayName) {
   return `<button class="btn light" style="padding:5px 9px;margin:3px" onclick="openMemberProfile('${userId}')">${esc(displayName || 'Avonturier')}</button>`;
 }
 
+function localDateISO() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Een patch wordt pas zichtbaar nadat de einddatum van de reis voorbij is.
+function tripHasEnded(trip) {
+  return Boolean(trip && trip.end_date && trip.end_date < localDateISO());
+}
+
 function patchesHtml(rows, compact = false) {
   if (!rows || !rows.length) return '<p class="muted">Je hebt nog geen avonturenpatches verzameld. Na een reis verschijnen ze hier.</p>';
   return `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(135px,1fr))">${rows.map(row => `
@@ -761,6 +774,7 @@ async function home() {
   const {data:trips,error:tripError} = await sb.from('trips')
     .select('id,title,destination,description,start_date,end_date,status,image_url')
     .eq('status','published')
+    .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date')
     .limit(3);
 
@@ -966,6 +980,7 @@ async function discover() {
   const {data:trips,error} = await sb.from('trips')
    .select('id,title,destination,description,start_date,end_date,status,image_url')
     .eq('status','published')
+    .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date');
 
   if (error) throw error;
@@ -1109,7 +1124,7 @@ async function myAdventures() {
 
   const participatedTrips = participatedIds
     .map(id => tripMap[id])
-    .filter(Boolean);
+    .filter(t => tripHasEnded(t));
 
   const dateLabel = t => {
     if (!t.start_date && !t.end_date) return 'Datum volgt';
@@ -1747,9 +1762,9 @@ async function profile() {
   let patches = [];
   if (ids.length) {
     const {data,error:tripError} = await sb.from('trips')
-      .select('id,title,destination,patch_image_url').in('id',ids);
+      .select('id,title,destination,end_date,patch_image_url').in('id',ids);
     if (tripError) throw tripError;
-    patches = data || [];
+    patches = (data || []).filter(t => tripHasEnded(t));
   }
 
   return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.')
@@ -1785,9 +1800,9 @@ async function memberProfile() {
   let patches = [];
   if (ids.length) {
     const {data,error:tripError} = await sb.from('trips')
-      .select('id,title,destination,patch_image_url').in('id',ids);
+      .select('id,title,destination,end_date,patch_image_url').in('id',ids);
     if (tripError) throw tripError;
-    patches = data || [];
+    patches = (data || []).filter(t => tripHasEnded(t));
   }
 
   return section('AVONTURIER','Maak kennis','Ontdek welke avonturen deze BASECAMP-avonturier al heeft beleefd.')
