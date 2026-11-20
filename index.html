@@ -1077,6 +1077,7 @@ async function tripDiscussion() {
 }
 
 
+
 async function notifications() {
   const [
     {data: tripItems, error: tripError},
@@ -1085,11 +1086,13 @@ async function notifications() {
     sb.from('trip_discussion_notifications')
       .select('id,trip_id,discussion_id,created_at,read_at')
       .eq('recipient_id', me.id)
+      .is('read_at', null)
       .order('created_at', {ascending: false}),
 
     sb.from('post_comment_notifications')
       .select('id,post_id,comment_id,created_at,read_at')
       .eq('recipient_id', me.id)
+      .is('read_at', null)
       .order('created_at', {ascending: false})
   ]);
 
@@ -1106,7 +1109,7 @@ async function notifications() {
       'Hier verschijnen nieuwe reacties op reisgesprekken en communityberichten.'
     ) + `
       <div class="card">
-        <p class="muted">Je hebt momenteel nog geen meldingen.</p>
+        <p class="muted">Je hebt momenteel geen ongelezen meldingen.</p>
       </div>
     `;
   }
@@ -1154,7 +1157,7 @@ async function notifications() {
             <article style="border-bottom:1px solid var(--line);padding:12px 0">
               <div class="feedtop">
                 <b>${esc(names[message.user_id] || 'Avonturier')}</b>
-                ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
+                <span class="badge">Nieuw</span>
               </div>
               <p><b>${esc(trip.title)}</b></p>
               <p>${esc(message.content)}</p>
@@ -1211,7 +1214,7 @@ async function notifications() {
             <article style="border-bottom:1px solid var(--line);padding:12px 0">
               <div class="feedtop">
                 <b>${esc(names[comment.user_id] || 'Avonturier')}</b>
-                ${n.read_at ? '' : '<span class="badge">Nieuw</span>'}
+                <span class="badge">Nieuw</span>
               </div>
               <p>Reageerde op jouw bericht:</p>
               <p class="muted">${esc(post.content || 'Communitybericht')}</p>
