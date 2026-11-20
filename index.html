@@ -1,5 +1,6 @@
 
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -204,6 +205,7 @@ let page = 'home';
 let room = null;
 let chatChannel = null;
 let selectedTripId = null;
+let notificationRefreshTimer = null;
 const $ = id => document.getElementById(id);
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -318,6 +320,11 @@ async function signOut() {
     chatChannel = null;
   }
 
+  if (notificationRefreshTimer) {
+    clearInterval(notificationRefreshTimer);
+    notificationRefreshTimer = null;
+  }
+
   await sb.auth.signOut();
   session = null;
   me = null;
@@ -366,6 +373,7 @@ async function refreshAuth() {
   $('userLabel').textContent = 'Welkom, ' + (me.display_name || 'avonturier');
   $('adminNav').classList.toggle('hidden', !['admin','moderator'].includes(me.role));
 
+  startNotificationRefresh();
   await go('home');
 }
 
@@ -454,10 +462,40 @@ async function updateNotificationBadge() {
       badge.textContent = count;
       badge.classList.toggle('hidden', count === 0);
     });
+
+    return count;
   } catch (e) {
     console.error('Meldingen tellen mislukt:', e);
+    return null;
   }
 }
+
+function startNotificationRefresh() {
+  if (notificationRefreshTimer) {
+    clearInterval(notificationRefreshTimer);
+  }
+
+  // Controleer regelmatig op nieuwe meldingen zolang de gebruiker is ingelogd.
+  notificationRefreshTimer = setInterval(async () => {
+    if (!me || document.hidden) return;
+
+    const count = await updateNotificationBadge();
+
+    // Als de meldingenpagina openstaat, toon dan ook de nieuwste meldingen.
+    if (count !== null && page === 'notifications') {
+      await render();
+    }
+  }, 15000);
+}
+
+// Werk meldingen meteen bij wanneer de gebruiker terugkeert naar BASECAMP.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && me) {
+    updateNotificationBadge();
+    if (page === 'notifications') render();
+  }
+});
+
 /* COMMUNITYBERICHTEN EN FOTO'S */
 
 async function postsHtml() {
