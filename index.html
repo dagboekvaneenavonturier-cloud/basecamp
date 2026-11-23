@@ -220,9 +220,6 @@ main{padding:18px 14px 85px}
       <button data-page="community">◎ Community</button>
       <button data-page="discover">⌖ Ontdek reizen</button>
       <button data-page="calendar">▦ Avonturenkalender</button>
-      <button data-page="adventurers">♧ Avonturiers</button>
-      <button data-page="archive">▧ Reisarchief</button>
-      <button data-page="myAdventures">⚑ Mijn avonturen</button>
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCount" class="notification-badge hidden"></span>
 </button>
@@ -241,9 +238,6 @@ main{padding:18px 14px 85px}
   <button data-page="community">◎<br>Community</button>
   <button data-page="discover">⌖<br>Ontdek</button>
   <button data-page="calendar">▦<br>Kalender</button>
-  <button data-page="adventurers">♧<br>Avonturiers</button>
-  <button data-page="archive">▧<br>Archief</button>
-  <button data-page="myAdventures">⚑<br>Avonturen</button>
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
@@ -277,6 +271,8 @@ let selectedTripId = null;
 let selectedArchiveTripId = null;
 let selectedProfileId = null;
 let adventureInterestFilter = 'Alles';
+let communityMode = 'feed';
+let profileMode = 'profile';
 const ADVENTURE_INTERESTS = ['Trekking','Packraften','Expedities','Bergsport','Micro-avonturen','Wildwater','Survival','Kamperen'];
 let bucketlistView = 'wishlist';
 let editingBucketItemId = null;
@@ -1059,12 +1055,14 @@ async function home() {
 }
 
 
+function communityTabs(active) {
+  return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='feed'?'active':''}" onclick="setCommunityMode('feed')">◎ Communityberichten</button><button type="button" class="${active==='adventurers'?'active':''}" onclick="setCommunityMode('adventurers')">♧ Avonturiers</button></div>`;
+}
+async function setCommunityMode(mode) { communityMode = mode === 'adventurers' ? 'adventurers' : 'feed'; await render(); }
+
 async function community() {
-  return section(
-    'DE ONTMOETINGSPLAATS',
-    'De community',
-    'Deel je plannen, stel vragen en inspireer andere avonturiers.'
-  ) + composer() + await postsHtml();
+  const heading = section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.');
+  return heading + communityTabs(communityMode) + (communityMode === 'adventurers' ? await adventurers(false) : composer() + await postsHtml());
 }
 
 async function deleteCommunityPost(post_id) {
@@ -1127,7 +1125,7 @@ function adventureMatchKey(value) {
   return String(value || '').toLocaleLowerCase('nl').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 }
 
-async function adventurers() {
+async function adventurers(includeHeading = true) {
   const {data:people,error} = await sb.from('profiles')
     .select('id,display_name,bio,avatar_url,adventure_interests,bucketlist_public,is_guide')
     .eq('status','approved').eq('discoverable',true).order('display_name');
@@ -1151,7 +1149,7 @@ async function adventurers() {
   }
   const myBucketItems = bucketRows.filter(item=>item.user_id===me.id);
 
-  return section('ONTMOET ANDERE AVONTURIERS','Avonturiers ontdekken','Vind mensen die dromen van dezelfde tochten, rivieren en expedities.') + `
+  return (includeHeading ? section('ONTMOET ANDERE AVONTURIERS','Avonturiers ontdekken','Vind mensen die dromen van dezelfde tochten, rivieren en expedities.') : '') + `
     <div class="card">
       <div class="field"><label for="adventureInterestFilter">Filter op interesse</label><select id="adventureInterestFilter" onchange="setAdventureFilter(this.value)"><option ${adventureInterestFilter==='Alles'?'selected':''}>Alles</option>${ADVENTURE_INTERESTS.map(v=>`<option value="${v}" ${adventureInterestFilter===v?'selected':''}>${v}</option>`).join('')}</select></div>
       <p class="muted">${filtered.length} ${filtered.length===1?'avonturier':'avonturiers'} gevonden die hun profiel zichtbaar hebben gemaakt.</p>
@@ -1339,7 +1337,7 @@ async function showCompassResults() {
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
       </div>`;
     }).join('') : '<div class="card"><h3>We zijn nog bezig met het in kaart brengen van onze reizen.</h3><p class="muted">Er zijn nog geen reizen met een volledig Avonturenkompas-profiel. Bekijk intussen het volledige aanbod.</p></div>';
-    compassResultsHtml = section('JOUW AVONTURENKOMPAS','Dit zijn jouw mogelijke avonturen','De beste matches staan bovenaan. Een matchpercentage is een richtingaanwijzer, geen automatische toelatingsbeslissing.') +
+    compassResultsHtml = section('JOUW AVONTURENKOMPAS','Dit zijn jouw mogelijke avonturen','De beste matches staan bovenaan. Een matchpercentage is een richtingaanwijzer, geen automatische toelatingsbeslissing.') + discoverTabs('compass') +
       `<div class="card" style="background:#f7f5ed"><b>Jouw avontuur begint met nieuwsgierigheid.</b><p class="muted">Bekijk de ervaringseisen en voorbereiding bij elke reis. Twijfel je? Stel je vraag rechtstreeks aan het team.</p><button class="btn light" onclick="restartCompass()">← Mijn antwoorden aanpassen</button></div><div class="grid">${resultsHtml}</div><button class="btn light" onclick="setDiscoverMode('trips')">Bekijk alle reizen</button>`;
     $('main').innerHTML = compassResultsHtml;
   } catch (e) {
@@ -1350,6 +1348,7 @@ async function showCompassResults() {
 
 function restartCompass() { discoverMode='compass'; render().catch(e=>alert(e.message||e)); }
 function setDiscoverMode(mode) { discoverMode=mode; render().catch(e=>alert(e.message||e)); }
+function discoverTabs(active) { return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='trips'?'active':''}" onclick="setDiscoverMode('trips')">⌖ Alle reizen</button><button type="button" class="${active==='compass'?'active':''}" onclick="setDiscoverMode('compass')">Avonturenkompas</button><button type="button" class="${active==='archive'?'active':''}" onclick="setDiscoverMode('archive')">▧ Reisarchief</button></div>`; }
 
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
@@ -1359,11 +1358,11 @@ async function discover() {
     .order('start_date');
   if (error) throw error;
 
+  if (discoverMode === 'archive') return section('HERINNERINGEN','Ontdek reizen','Bekijk het actuele aanbod en blader door eerdere avonturen.') + discoverTabs('archive') + await tripArchive(false);
   if (discoverMode === 'results' && compassResultsHtml) return compassResultsHtml;
 
   if (discoverMode === 'compass') {
-    return section('NIEUWE PLANNEN','Ontdek avonturen','Vind een reis die past bij jouw goesting, ervaring en verwachtingen.') +
-      `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><button type="button" onclick="setDiscoverMode('trips')">Alle reizen</button><button type="button" class="active">⌖ Avonturenkompas</button></div>` + compassQuizForm();
+    return section('NIEUWE PLANNEN','Ontdek avonturen','Vind een reis die past bij jouw goesting, ervaring en verwachtingen.') + discoverTabs('compass') + compassQuizForm();
   }
 
   const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id').in('trip_id',(trips || []).map(t => t.id));
@@ -1376,8 +1375,7 @@ async function discover() {
   const activeInterests = (interests || []).filter(i => memberNames[i.user_id]?.status === 'approved');
   const myInterests = new Set(activeInterests.filter(i => i.user_id === me.id).map(i => i.trip_id));
 
-  return section('NIEUWE PLANNEN','Ontdek avonturen','Reizen en activiteiten van Dagboek van een Avonturier.') +
-  `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><button type="button" class="active">Alle reizen</button><button type="button" onclick="setDiscoverMode('compass')">⌖ Avonturenkompas</button></div><div class="grid">
+  return section('NIEUWE PLANNEN','Ontdek avonturen','Reizen en activiteiten van Dagboek van een Avonturier.') + discoverTabs('trips') + `<div class="grid">
     ${(trips || []).map(t => {
       const interested = myInterests.has(t.id);
       return `<div class="card">
@@ -1398,7 +1396,7 @@ async function discover() {
   </div>`;
 }
 
-async function myAdventures() {
+async function myAdventures(includeHeading = true) {
   // Reizen waarin dit lid interesse heeft getoond.
   const {data: interestRows, error: interestError} = await sb
     .from('trip_interests')
@@ -1494,11 +1492,11 @@ async function myAdventures() {
     </article>
   `;
 
-  return section(
+  return (includeHeading ? section(
     'JOUW BASECAMP',
     'Mijn avonturen',
     'Alles wat je bij BASECAMP volgt, op één plek.'
-  ) + `
+  ) : '') + `
     <div class="grid">
       <div class="card">
         <div class="eyebrow">REISINTERESSES</div>
@@ -1958,7 +1956,7 @@ async function deleteTripDiscussion(id) {
 
 
 /* REISARCHIEF */
-async function tripArchive() {
+async function tripArchive(includeHeading = true) {
   const {data:trips,error} = await sb.from('trips')
     .select('id,title,destination,description,start_date,end_date,image_url')
     .lt('end_date',localDateISO())
@@ -1986,7 +1984,7 @@ async function tripArchive() {
       if (signedData?.signedUrl) albumInfo[photo.trip_id].cover = signedData.signedUrl;
     }
   }
-  return section('HERINNERINGEN','Het Reisarchief','Blader door foto’s van avonturen die we samen beleefd hebben. Misschien ontdek je hier wel jouw volgende reis.')
+  return (includeHeading ? section('HERINNERINGEN','Het Reisarchief','Blader door foto’s van avonturen die we samen beleefd hebben. Misschien ontdek je hier wel jouw volgende reis.') : '')
     + `<div class="grid">${rows.map(t => {
       const album = albumInfo[t.id] || {count:0,cover:null};
       const cover = album.cover || t.image_url;
@@ -2040,7 +2038,7 @@ async function tripAlbum() {
   if (participantCheckError) throw participantCheckError;
   const canUpload = trip.end_date && trip.end_date < localDateISO() && (isParticipant || ['admin','moderator'].includes(me.role));
   return section('REISARCHIEF',''+trip.title,'Foto’s en herinneringen van dit avontuur.')
-    + `<button class="btn light" onclick="go('archive')">← Terug naar het Reisarchief</button>
+    + `<button class="btn light" onclick="discoverMode='archive';go('discover')">← Terug naar het Reisarchief</button>
       ${canUpload ? `<div class="card" style="margin:16px 0"><h3>Deel jouw foto’s</h3><p class="muted">Heb je aan deze reis deelgenomen? Voeg je mooiste momenten toe.</p>
         <label for="archivePhotos">Kies foto’s (JPG, PNG of WEBP, maximaal 8 MB per foto)</label>
         <input id="archivePhotos" type="file" accept="image/jpeg,image/png,image/webp" multiple>
@@ -2367,7 +2365,11 @@ function avatarMarkup(url, name, extraClass = '') {
   return `<div class="avatar ${extraClass}">${url ? `<img src="${esc(url)}" alt="Profielfoto van ${esc(name || 'avonturier')}">` : fallback}</div>`;
 }
 
+function profileTabs(active) { return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='profile'?'active':''}" onclick="setProfileMode('profile')">◉ Profielgegevens</button><button type="button" class="${active==='adventures'?'active':''}" onclick="setProfileMode('adventures')">⚑ Mijn avonturen</button></div>`; }
+async function setProfileMode(mode) { profileMode = mode === 'adventures' ? 'adventures' : 'profile'; await render(); }
+
 async function profile() {
+  if (profileMode === 'adventures') return section('JOUW BASECAMP','Mijn profiel','Bekijk je profielgegevens en je persoonlijke avonturenoverzicht.') + profileTabs('adventures') + await myAdventures(false);
   const {data:participantRows,error} = await sb.from('trip_participants')
     .select('trip_id').eq('user_id',me.id);
   if (error) throw error;
@@ -2389,7 +2391,7 @@ async function profile() {
     .select('id,title,destination,status').eq('status','published').order('start_date',{ascending:true});
   if (availableTripsError) throw availableTripsError;
 
-  return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.')
+  return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.') + profileTabs('profile')
     + `<div class="card">
       ${avatarMarkup(me.avatar_url, me.display_name, 'profile-avatar')}
       <div class="identity-meta" style="margin:0 0 12px">${me.is_guide ? '<span class="identity-role">GIDS</span>' : ''}${communityRank(patches.length) ? `<span class="identity-rank">${esc(communityRank(patches.length))}</span>` : ''}</div>
@@ -2593,7 +2595,7 @@ async function memberProfile() {
   }
 
   return section('AVONTURIER','Maak kennis','Ontdek welke avonturen deze BASECAMP-avonturier al heeft beleefd.')
-    + `<button class="btn light" onclick="go('adventurers')">← Terug</button>
+    + `<button class="btn light" onclick="communityMode='adventurers';go('community')">← Terug naar Avonturiers</button>
       <div class="card">${avatarMarkup(person.avatar_url, person.display_name, 'profile-avatar')}
       <h3>${esc(person.display_name || 'Avonturier')}</h3><div class="identity-meta" style="margin:0 0 10px">${person.is_guide ? '<span class="identity-role">GIDS</span>' : ''}${communityRank(patches.length) ? `<span class="identity-rank">${esc(communityRank(patches.length))}</span>` : ''}</div>
       <button class="btn" style="margin:8px 0 14px" onclick="startDirectChat('${person.id}')">✉️ Stuur privébericht</button>
