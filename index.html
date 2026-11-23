@@ -1178,77 +1178,186 @@ async function setAdventureFilter(value) {
 
 /* ONTDEK */
 
+let discoverMode = 'trips';
+let compassResultsHtml = '';
+
+function compassQuizField(key, label, multi = false) {
+  const options = COMPASS_OPTIONS[key] || [];
+  return `<div class="field"><label for="compass-answer-${key}">${label}</label>
+    <select id="compass-answer-${key}" ${multi ? 'multiple size="4" style="min-height:96px"' : ''}>
+      ${multi ? '' : '<option value="">Maakt me niet uit</option>'}
+      ${options.map(([value,text]) => `<option value="${value}">${text}</option>`).join('')}
+    </select>${multi ? '<small class="muted">Meerdere keuzes mogelijk. Gebruik Ctrl om te selecteren.</small>' : ''}</div>`;
+}
+
+function compassQuizForm() {
+  return `<div class="hero" style="margin:14px 0 18px">
+    <div class="eyebrow">JOUW PERSOONLIJKE ROUTEWIJZER</div>
+    <h1>Welk avontuur past bij jou?</h1>
+    <p>Beantwoord 8 korte vragen en ontdek welke reizen aansluiten bij jouw interesses, ervaring en goesting om op pad te gaan.</p>
+    <span class="tag" style="background:#e8e4d8;color:#263d30">± 2 minuten</span>
+  </div>
+  <div class="card">
+    <h3>1. Wat voor avontuur spreekt je het meest aan?</h3>
+    ${compassQuizField('adventure_types','Kies één of meerdere types',true)}
+    <h3>2. Hoeveel uitdaging zoek je?</h3>
+    ${compassQuizField('adventure_level','Avontuurlijk niveau')}
+    <h3>3. Hoeveel ervaring heb je met dit soort activiteiten?</h3>
+    ${compassQuizField('experience_level','Jouw ervaring')}
+    <h3>4. Welke fysieke uitdaging past bij jou?</h3>
+    ${compassQuizField('physical_level','Fysieke inspanning')}
+    <h3>5. Hoe wil je overnachten?</h3>
+    ${compassQuizField('accommodation_types','Overnachting en comfort',true)}
+    <h3>6. In welke omgeving trek je het liefst op avontuur?</h3>
+    ${compassQuizField('environments','Omgeving',true)}
+    <h3>7. Hoeveel tijd wil je vrijmaken?</h3>
+    <div class="field"><label for="compass-duration">Duur van het avontuur</label><select id="compass-duration">
+      <option value="">Geen voorkeur</option><option value="1-3">1 tot 3 dagen</option><option value="4-7">4 tot 7 dagen</option><option value="8-14">8 tot 14 dagen</option><option value="15-365">15 dagen of langer</option>
+    </select></div>
+    <h3>8. Wat maakt een avontuur voor jou geslaagd?</h3>
+    ${compassQuizField('motivations','Wat motiveert je?',true)}
+    <div class="notice">Geen enkel antwoord sluit je uit. Het kompas helpt je ontdekken wat bij je past; bij elke reis tonen we ook eerlijk welke ervaring en voorbereiding nodig zijn.</div>
+    <button class="btn gold" onclick="showCompassResults()">Ontdek mijn avonturen →</button>
+  </div>`;
+}
+
+function compassReadAnswers() {
+  const multi = key => Array.from($(`compass-answer-${key}`)?.selectedOptions || []).map(o=>o.value);
+  const single = key => $(`compass-answer-${key}`)?.value || '';
+  return {
+    adventure_types:multi('adventure_types'), adventure_level:single('adventure_level'),
+    experience_level:single('experience_level'), physical_level:single('physical_level'),
+    accommodation_types:multi('accommodation_types'), environments:multi('environments'),
+    duration: $('compass-duration')?.value || '', motivations:multi('motivations')
+  };
+}
+
+function compassOverlap(answer, profile, weight) {
+  if (!answer?.length || !profile?.length) return {score:0,weight:0};
+  const hits = answer.filter(v=>profile.includes(v)).length;
+  return {score:weight * hits / answer.length,weight};
+}
+
+function compassMatch(answers, profile, trip) {
+  const p = profile || {};
+  let earned = 0, possible = 0;
+  const addArray = (answer, values, weight) => {
+    const result = compassOverlap(answer, values || [], weight);
+    earned += result.score; possible += result.weight;
+  };
+  const addSingle = (answer, value, weight, levels) => {
+    if (!answer || !value) return;
+    possible += weight;
+    if (answer === value) earned += weight;
+    else if (levels && Math.abs(levels.indexOf(answer)-levels.indexOf(value)) === 1) earned += weight * .55;
+  };
+  addArray(answers.adventure_types,p.adventure_types,25);
+  addSingle(answers.adventure_level,p.adventure_level,15,['kennismaking','uitdagend','intensief','expeditie']);
+  addSingle(answers.physical_level,p.physical_level,15,['licht','gemiddeld','zwaar','zeer_zwaar']);
+  addSingle(answers.experience_level,p.experience_level,15,['geen','enige','specifiek','ervaren']);
+  addArray(answers.accommodation_types,p.accommodation_types,10);
+  addArray(answers.environments,p.environments,10);
+  addArray(answers.motivations,p.motivations,5);
+  if (answers.duration && (p.duration_min_days || p.duration_max_days)) {
+    possible += 5;
+    const [lo,hi] = answers.duration.split('-').map(Number);
+    const min = p.duration_min_days || 1, max = p.duration_max_days || 365;
+    if (min <= hi && max >= lo) earned += 5;
+  }
+  const score = possible ? Math.round(earned / possible * 100) : 0;
+  const levels = ['geen','enige','specifiek','ervaren'];
+  const userLevel = levels.indexOf(answers.experience_level || 'geen');
+  const tripLevel = levels.indexOf(p.experience_level || 'geen');
+  const experienceGap = tripLevel > userLevel;
+  return {score,experienceGap,profile:p,trip};
+}
+
+async function showCompassResults() {
+  const answers = compassReadAnswers();
+  const button = document.querySelector('button[onclick="showCompassResults()"]');
+  if (button) { button.disabled = true; button.textContent = 'Je kompas wordt berekend…'; }
+  try {
+    const [{data:trips,error:tripError},{data:profiles,error:profileError},{data:myInterestRows,error:myInterestError}] = await Promise.all([
+      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url').eq('status','published').order('start_date'),
+      sb.from('adventure_compass_profiles').select('*'),
+      sb.from('trip_interests').select('trip_id').eq('user_id',me.id)
+    ]);
+    if (tripError) throw tripError;
+    if (profileError) throw profileError;
+    if (myInterestError) throw myInterestError;
+    const myInterestSet = new Set((myInterestRows || []).map(x=>x.trip_id));
+    const profileMap = Object.fromEntries((profiles || []).map(p=>[p.trip_id,p]));
+    const results = (trips || []).filter(t=>profileMap[t.id]).map(t=>compassMatch(answers,profileMap[t.id],t)).sort((a,b)=>b.score-a.score);
+    const resultsHtml = results.length ? results.map(r=>{
+      const t=r.trip, p=r.profile;
+      const label = r.score>=90?'Uitstekende match':r.score>=75?'Sterke match':r.score>=55?'Mogelijke match':'Misschien iets minder jouw richting';
+      const experienceNote = r.experienceGap
+        ? (p.preparation_available ? 'Deze reis vraagt meer ervaring dan je momenteel aangeeft. Er is wel een voorbereidingstraject beschikbaar.' : 'Deze reis vraagt meer ervaring dan je momenteel aangeeft. Bekijk goed of je aan de ervaringsvereisten voldoet.')
+        : p.suitability_level==='beginner' ? 'Ook geschikt als je nog weinig ervaring hebt.'
+        : p.suitability_level==='met_voorbereiding' ? 'Geschikt met een goede voorbereiding.' : 'Voor deze reis is relevante ervaring vereist.';
+      return `<div class="card">
+        ${t.image_url?`<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="width:100%;height:175px;object-fit:cover;border-radius:9px;margin-bottom:10px">`:''}
+        <div class="row"><span class="tag">${esc(t.destination||'Avontuur')}</span><b style="font-size:20px;color:var(--g)">${r.score}%</b></div>
+        <h3>${esc(t.title)}</h3><b>${label}</b>
+        <p class="muted">${esc(t.description||'')}</p>
+        <div class="notice">${esc(experienceNote)}</div>
+        ${p.required_skills?.length?`<p class="muted"><b>Vaardigheden:</b> ${p.required_skills.map(x=>esc((COMPASS_OPTIONS.required_skills.find(o=>o[0]===x)||[x,x])[1])).join(', ')}</p>`:''}
+        <button class="btn ${myInterestSet.has(t.id)?'light':''}" onclick="toggleTripInterest('${t.id}',${myInterestSet.has(t.id)})">${myInterestSet.has(t.id)?'✓ Je hebt interesse getoond':'Ik heb interesse'}</button>
+        <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
+      </div>`;
+    }).join('') : '<div class="card"><h3>We zijn nog bezig met het in kaart brengen van onze reizen.</h3><p class="muted">Er zijn nog geen reizen met een volledig Avonturenkompas-profiel. Bekijk intussen het volledige aanbod.</p></div>';
+    compassResultsHtml = section('JOUW AVONTURENKOMPAS','Dit zijn jouw mogelijke avonturen','De beste matches staan bovenaan. Een matchpercentage is een richtingaanwijzer, geen automatische toelatingsbeslissing.') +
+      `<div class="card" style="background:#f7f5ed"><b>Jouw avontuur begint met nieuwsgierigheid.</b><p class="muted">Bekijk de ervaringseisen en voorbereiding bij elke reis. Twijfel je? Stel je vraag rechtstreeks aan het team.</p><button class="btn light" onclick="restartCompass()">← Mijn antwoorden aanpassen</button></div><div class="grid">${resultsHtml}</div><button class="btn light" onclick="setDiscoverMode('trips')">Bekijk alle reizen</button>`;
+    $('main').innerHTML = compassResultsHtml;
+  } catch (e) {
+    if (button) { button.disabled=false; button.textContent='Ontdek mijn avonturen →'; }
+    alert('Het Avonturenkompas kon niet worden berekend: '+(e.message||e));
+  }
+}
+
+function restartCompass() { discoverMode='compass'; render().catch(e=>alert(e.message||e)); }
+function setDiscoverMode(mode) { discoverMode=mode; render().catch(e=>alert(e.message||e)); }
+
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
    .select('id,title,destination,description,start_date,end_date,status,image_url')
     .eq('status','published')
     .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date');
-
   if (error) throw error;
 
-  const {data:interests,error:interestError} = await sb
-    .from('trip_interests')
-    .select('trip_id,user_id')
-    .in('trip_id',(trips || []).map(t => t.id));
+  if (discoverMode === 'results' && compassResultsHtml) return compassResultsHtml;
 
+  if (discoverMode === 'compass') {
+    return section('NIEUWE PLANNEN','Ontdek avonturen','Vind een reis die past bij jouw goesting, ervaring en verwachtingen.') +
+      `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><button type="button" onclick="setDiscoverMode('trips')">Alle reizen</button><button type="button" class="active">⌖ Avonturenkompas</button></div>` + compassQuizForm();
+  }
+
+  const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id').in('trip_id',(trips || []).map(t => t.id));
   if (interestError) throw interestError;
-
-  const {data:participantRows,error:participantError} = await sb
-    .from('trip_participants')
-    .select('trip_id,user_id')
-    .in('trip_id',(trips || []).map(t => t.id));
-
+  const {data:participantRows,error:participantError} = await sb.from('trip_participants').select('trip_id,user_id').in('trip_id',(trips || []).map(t => t.id));
   if (participantError) throw participantError;
+  const memberNames = await profilesFor([...(interests || []).map(x => x.user_id),...(participantRows || []).map(x => x.user_id)]);
+  const myInterests = new Set((interests || []).filter(i => i.user_id === me.id).map(i => i.trip_id));
 
-  const memberNames = await profilesFor([
-    ...(interests || []).map(x => x.user_id),
-    ...(participantRows || []).map(x => x.user_id)
-  ]);
-
-  const myInterests = new Set(
-    (interests || [])
-      .filter(i => i.user_id === me.id)
-      .map(i => i.trip_id)
-  );
-
-  return section(
-    'NIEUWE PLANNEN',
-    'Ontdek avonturen',
-    'Reizen en activiteiten van Dagboek van een Avonturier.'
-  ) + `<div class="grid">
+  return section('NIEUWE PLANNEN','Ontdek avonturen','Reizen en activiteiten van Dagboek van een Avonturier.') +
+  `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><button type="button" class="active">Alle reizen</button><button type="button" onclick="setDiscoverMode('compass')">⌖ Avonturenkompas</button></div><div class="grid">
     ${(trips || []).map(t => {
       const interested = myInterests.has(t.id);
-
-      return `
-        <div class="card">
-          ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:190px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
-          <span class="tag">${esc(t.destination || 'Avontuur')}</span>
-          <h3>${esc(t.title)}</h3>
-          <b>
-            ${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
-            ${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}
-          </b>
-          <p class="muted">${esc(t.description || '')}</p>
-
-          <button class="btn ${interested ? 'light' : ''}"
-  onclick="toggleTripInterest('${t.id}',${interested})">
-  ${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}
-</button>
-
-<button class="btn light"
-  onclick="openTripDiscussion('${t.id}')">
-  Vragen & gesprek →
-</button>
-          <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
-            <b>Wie gaat er mee?</b>
-            <div class="muted" style="margin:5px 0">${(participantRows || []).filter(x => x.trip_id === t.id).length} bevestigde deelnemers</div>
-            ${(participantRows || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('') || '<p class="muted">De deelnemers worden bekendgemaakt zodra ze bevestigd zijn.</p>'}
-            <div class="muted" style="margin-top:8px">${(interests || []).filter(x => x.trip_id === t.id).length} leden hebben interesse</div>
-            ${(interests || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('')}
-          </div>
+      return `<div class="card">
+        ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:190px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
+        <span class="tag">${esc(t.destination || 'Avontuur')}</span><h3>${esc(t.title)}</h3>
+        <b>${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}</b>
+        <p class="muted">${esc(t.description || '')}</p>
+        <button class="btn ${interested ? 'light' : ''}" onclick="toggleTripInterest('${t.id}',${interested})">${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}</button>
+        <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
+        <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><b>Wie gaat er mee?</b>
+          <div class="muted" style="margin:5px 0">${(participantRows || []).filter(x => x.trip_id === t.id).length} bevestigde deelnemers</div>
+          ${(participantRows || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('') || '<p class="muted">De deelnemers worden bekendgemaakt zodra ze bevestigd zijn.</p>'}
+          <div class="muted" style="margin-top:8px">${(interests || []).filter(x => x.trip_id === t.id).length} leden hebben interesse</div>
+          ${(interests || []).filter(x => x.trip_id === t.id).map(x => memberLink(x.user_id, memberNames[x.user_id])).join('')}
         </div>
-      `;
+      </div>`;
     }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
   </div>`;
 }
@@ -1432,6 +1541,10 @@ async function toggleTripInterest(tripId, interested) {
       if (error) throw error;
     }
 
+    if (page === 'discover' && discoverMode === 'results') {
+      discoverMode = 'trips';
+      compassResultsHtml = '';
+    }
     await render();
 
   } catch (e) {
