@@ -1492,7 +1492,7 @@ async function myAdventures(includeHeading = true) {
       <h3>${esc(t.title)}</h3>
       <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
       <button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>
-      ${participatedIds.includes(t.id) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
+      ${participatedIds.includes(t.id) && !tripHasEnded(t) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
     </article>
   `;
 
@@ -1594,6 +1594,11 @@ async function personalTravelEnvironment() {
   const guides = await profilesFor((guideRows||[]).map(g=>g.guide_user_id));
   const date = v => v ? new Date(v+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'}) : 'Datum volgt';
   const block = (title,content,icon) => content ? `<section class="card"><h3>${icon||'⌖'} ${title}</h3><div style="white-space:pre-wrap;line-height:1.65">${esc(content)}</div></section>` : '';
+  const packingList = info?.packing_list ? (() => {
+    const items = String(info.packing_list).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+      .map(line => line.replace(/^(?:[-•*▪︎]\s*|\d+[.)]\s*)/, '').trim()).filter(Boolean);
+    return items.length ? `<section class="card"><h3>▣ Paklijst</h3><ul style="margin:8px 0 0;padding-left:22px;line-height:1.8">${items.map(item => `<li style="padding:2px 0">${esc(item)}</li>`).join('')}</ul></section>` : '';
+  })() : '';
   return `<button class="btn light" onclick="go('profile')">← Terug naar Mijn avonturen</button>
     <div class="calendar-hero" style="margin-top:14px">
       <div class="eyebrow">JOUW PERSOONLIJKE REISOMGEVING</div>
@@ -1610,7 +1615,7 @@ async function personalTravelEnvironment() {
     ${block('Ontmoetingsplaats',info?.meeting_info,'⚑')}
     ${block('Vervoer ter plaatse',info?.transport_info,'↗')}
     ${block('Programma',info?.itinerary,'▤')}
-    ${block('Paklijst',info?.packing_list,'▣')}
+    ${packingList}
     ${block('Inbegrepen in de prijs',info?.included,'✓')}
     ${block('Niet inbegrepen in de prijs',info?.excluded,'−')}
     ${block('Voorbereidingstraject',info?.preparation,'⌁')}
@@ -3018,7 +3023,7 @@ function travelInfoAdminForm(tripId,info,guides,memberOptions) {
     ${field('meeting_info','Ontmoetingsplaats','Waar en wanneer ontmoeten deelnemers elkaar?')}
     ${field('transport_info','Vervoer ter plaatse')}
     ${field('itinerary','Programma','Dag 1: ...')}
-    ${field('packing_list','Paklijst','Kleding, materiaal en persoonlijke benodigdheden...')}
+    ${field('packing_list','Paklijst','Zet elk item op een aparte regel, bijvoorbeeld:\nWandelschoenen\nRegenjas\nDrinkfles')}
     ${field('included','Inbegrepen in de prijs')}
     ${field('excluded','Niet inbegrepen in de prijs')}
     ${field('preparation','Voorbereidingstraject','Trainingsweekends, bijeenkomsten en deadlines...')}
