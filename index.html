@@ -76,6 +76,34 @@ textarea{min-height:80px}
 .bucket-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}.bucket-item:last-child{border-bottom:0}.bucket-actions{display:flex;gap:6px;flex-wrap:wrap}.bucket-actions button{font-size:12px;padding:7px 9px}.bucket-title{font-weight:750}.bucket-form{background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}.bucket-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.bucket-tabs button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 13px;cursor:pointer}.bucket-tabs button.active{background:var(--g);color:#fff}.bucket-editor{background:#f7f7f2;border:1px solid #dfe4d9;border-radius:10px;padding:12px;margin-top:10px}.bucket-public-setting{display:flex;gap:10px;align-items:flex-start;background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}.bucket-public-setting input{width:auto;margin-top:4px}.bucket-public-setting label{font-weight:600;font-size:13px}.bucket-trip-link{display:inline-block;margin-top:7px;font-size:12px}
 .error{background:#f8e5e1;color:#8a3025}
 .success{background:#e5efe2;color:#315c34}
+
+/* AVONTURENKOMPAS - QUIZ ONTWERP */
+.compass-intro{position:relative;overflow:hidden;background:linear-gradient(125deg,#20382b 0%,#405c43 58%,#71815d 100%);color:#fff;padding:30px;border-radius:18px;margin:14px 0 20px;box-shadow:0 12px 28px rgba(38,61,48,.13)}
+.compass-intro:after{content:"⌖";position:absolute;right:22px;top:8px;font:120px Georgia;color:rgba(255,255,255,.09);transform:rotate(-14deg)}
+.compass-intro .eyebrow{color:#e7cb8c}
+.compass-intro h1{position:relative;z-index:1;font:clamp(28px,4vw,38px) Georgia;margin:10px 0}
+.compass-intro p{position:relative;z-index:1;color:#e4ebe1;max-width:590px;line-height:1.6}
+.compass-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;position:relative;z-index:1}
+.compass-meta span{font-size:11px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.1);border-radius:30px;padding:7px 11px}
+.compass-questions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.compass-question{background:#fff;border:1px solid #e4e1d7;border-radius:15px;padding:17px;box-shadow:0 4px 14px rgba(38,51,41,.035);min-width:0}
+.compass-question.wide{grid-column:1/-1}
+.compass-question-head{display:flex;align-items:flex-start;gap:11px;margin-bottom:13px}
+.compass-number{width:31px;height:31px;display:grid;place-items:center;flex:0 0 31px;border-radius:10px;background:#e9eee5;color:#314b36;font:700 14px Georgia}
+.compass-question h3{font:18px Georgia;margin:2px 0 4px;color:#263d30}
+.compass-question .compass-hint{font-size:11px;color:#899187;margin:0}
+.compass-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.compass-choice{position:relative;display:flex;align-items:center;gap:8px;min-height:43px;padding:9px 10px;border:1px solid #e2e5dc;border-radius:10px;background:#fbfbf8;color:#435247;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
+.compass-choice:hover{border-color:#91a58b;background:#f3f6ef;transform:translateY(-1px)}
+.compass-choice:has(input:checked){border-color:#526d50;background:#eaf0e6;color:#263d30;box-shadow:inset 0 0 0 1px #526d50}
+.compass-choice input{width:15px;height:15px;flex:0 0 15px;margin:0;accent-color:#405c43}
+.compass-choice span{line-height:1.3}
+.compass-footnote{margin:15px 0;background:#f5f1e5;border:1px solid #e9dfc5;border-radius:12px;padding:13px 15px;color:#695b3b;font-size:12px;line-height:1.5}
+.compass-submit{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;padding:16px;background:#edf0e8;border-radius:14px}
+.compass-submit p{font-size:12px;color:#667366;margin:0;max-width:430px}
+.compass-submit .btn{padding:13px 19px;border-radius:10px}
+@media(max-width:680px){.compass-intro{padding:23px 19px}.compass-intro:after{font-size:90px;right:8px}.compass-questions{grid-template-columns:1fr}.compass-question.wide{grid-column:auto}.compass-choices{grid-template-columns:1fr 1fr}.compass-submit{align-items:stretch}.compass-submit .btn{width:100%}}
+
 @media(max-width:680px){
 .layout{display:block}
 aside{display:none}
@@ -1181,54 +1209,74 @@ async function setAdventureFilter(value) {
 let discoverMode = 'trips';
 let compassResultsHtml = '';
 
-function compassQuizField(key, label, multi = false) {
+function compassQuizField(key, label, multi = false, number = '', hint = '') {
   const options = COMPASS_OPTIONS[key] || [];
-  return `<div class="field"><label for="compass-answer-${key}">${label}</label>
-    <select id="compass-answer-${key}" ${multi ? 'multiple size="4" style="min-height:96px"' : ''}>
-      ${multi ? '' : '<option value="">Maakt me niet uit</option>'}
-      ${options.map(([value,text]) => `<option value="${value}">${text}</option>`).join('')}
-    </select>${multi ? '<small class="muted">Meerdere keuzes mogelijk. Gebruik Ctrl om te selecteren.</small>' : ''}</div>`;
+  const type = multi ? 'checkbox' : 'radio';
+  const name = `compass-answer-${key}`;
+  const choices = options.map(([value,text]) => `
+    <label class="compass-choice">
+      <input type="${type}" name="${name}" value="${value}">
+      <span>${text}</span>
+    </label>`).join('');
+  const noPreference = multi ? '' : `
+    <label class="compass-choice">
+      <input type="radio" name="${name}" value="" checked>
+      <span>Geen voorkeur</span>
+    </label>`;
+  return `<section class="compass-question">
+    <div class="compass-question-head">
+      <span class="compass-number">${number}</span>
+      <div><h3>${label}</h3><p class="compass-hint">${hint || (multi ? 'Kies gerust meerdere antwoorden' : 'Kies wat het beste bij je past')}</p></div>
+    </div>
+    <div class="compass-choices">${noPreference}${choices}</div>
+  </section>`;
 }
 
 function compassQuizForm() {
-  return `<div class="hero" style="margin:14px 0 18px">
+  return `<div class="compass-intro">
     <div class="eyebrow">JOUW PERSOONLIJKE ROUTEWIJZER</div>
     <h1>Welk avontuur past bij jou?</h1>
-    <p>Beantwoord 8 korte vragen en ontdek welke reizen aansluiten bij jouw interesses, ervaring en goesting om op pad te gaan.</p>
-    <span class="tag" style="background:#e8e4d8;color:#263d30">± 2 minuten</span>
+    <p>Van een eerste micro-avontuur tot een meerdaagse expeditie. Vertel ons waar je warm voor loopt en ontdek welke reizen aansluiten bij jouw interesses, ervaring en verwachtingen.</p>
+    <div class="compass-meta"><span>⌖ 8 korte vragen</span><span>◷ Ongeveer 2 minuten</span><span>↗ Persoonlijke reissuggesties</span></div>
   </div>
-  <div class="card">
-    <h3>1. Wat voor avontuur spreekt je het meest aan?</h3>
-    ${compassQuizField('adventure_types','Kies één of meerdere types',true)}
-    <h3>2. Hoeveel uitdaging zoek je?</h3>
-    ${compassQuizField('adventure_level','Avontuurlijk niveau')}
-    <h3>3. Hoeveel ervaring heb je met dit soort activiteiten?</h3>
-    ${compassQuizField('experience_level','Jouw ervaring')}
-    <h3>4. Welke fysieke uitdaging past bij jou?</h3>
-    ${compassQuizField('physical_level','Fysieke inspanning')}
-    <h3>5. Hoe wil je overnachten?</h3>
-    ${compassQuizField('accommodation_types','Overnachting en comfort',true)}
-    <h3>6. In welke omgeving trek je het liefst op avontuur?</h3>
-    ${compassQuizField('environments','Omgeving',true)}
-    <h3>7. Hoeveel tijd wil je vrijmaken?</h3>
-    <div class="field"><label for="compass-duration">Duur van het avontuur</label><select id="compass-duration">
-      <option value="">Geen voorkeur</option><option value="1-3">1 tot 3 dagen</option><option value="4-7">4 tot 7 dagen</option><option value="8-14">8 tot 14 dagen</option><option value="15-365">15 dagen of langer</option>
-    </select></div>
-    <h3>8. Wat maakt een avontuur voor jou geslaagd?</h3>
-    ${compassQuizField('motivations','Wat motiveert je?',true)}
-    <div class="notice">Geen enkel antwoord sluit je uit. Het kompas helpt je ontdekken wat bij je past; bij elke reis tonen we ook eerlijk welke ervaring en voorbereiding nodig zijn.</div>
-    <button class="btn gold" onclick="showCompassResults()">Ontdek mijn avonturen →</button>
+  <div class="compass-questions">
+    ${compassQuizField('adventure_types','Wat voor avontuur spreekt je het meest aan?',true,'01','Je mag meerdere avontuurlijke activiteiten aanduiden.')}
+    ${compassQuizField('adventure_level','Hoeveel uitdaging zoek je?',false,'02','Van rustig kennismaken tot een echte expeditie.')}
+    ${compassQuizField('experience_level','Hoeveel ervaring heb je met dit soort activiteiten?',false,'03','Ervaring is geen vereiste om mee te dromen.')}
+    ${compassQuizField('physical_level','Welke fysieke uitdaging past bij jou?',false,'04','Kies het niveau waar jij je comfortabel bij voelt.')}
+    ${compassQuizField('accommodation_types','Hoe wil je het liefst overnachten?',true,'05','Van comfortabel verblijf tot slapen midden in de natuur.')}
+    ${compassQuizField('environments','In welke omgeving trek je graag op avontuur?',true,'06','Denk aan landschappen waar je graag tijd doorbrengt.')}
+    <section class="compass-question">
+      <div class="compass-question-head">
+        <span class="compass-number">07</span>
+        <div><h3>Hoeveel tijd wil je vrijmaken?</h3><p class="compass-hint">Kies de duur die meestal bij je agenda past.</p></div>
+      </div>
+      <div class="compass-choices">
+        <label class="compass-choice"><input type="radio" name="compass-duration" value="" checked><span>Geen voorkeur</span></label>
+        <label class="compass-choice"><input type="radio" name="compass-duration" value="1-3"><span>1 tot 3 dagen</span></label>
+        <label class="compass-choice"><input type="radio" name="compass-duration" value="4-7"><span>4 tot 7 dagen</span></label>
+        <label class="compass-choice"><input type="radio" name="compass-duration" value="8-14"><span>8 tot 14 dagen</span></label>
+        <label class="compass-choice"><input type="radio" name="compass-duration" value="15-365"><span>15 dagen of langer</span></label>
+      </div>
+    </section>
+    ${compassQuizField('motivations','Wat maakt een avontuur voor jou geslaagd?',true,'08','Wat hoop je vooral mee naar huis te nemen?')}
+  </div>
+  <div class="compass-footnote">Geen enkel antwoord sluit je uit. Het kompas helpt je ontdekken wat bij je past. Bij elke reis tonen we ook eerlijk welke ervaring en voorbereiding nodig zijn.</div>
+  <div class="compass-submit">
+    <p><b>Klaar om je volgende avontuur te ontdekken?</b><br>Je antwoorden worden gebruikt om de reizen uit ons aanbod te vergelijken.</p>
+    <button class="btn gold" onclick="showCompassResults()">Ontdek mijn avonturen <span aria-hidden="true">→</span></button>
   </div>`;
 }
 
 function compassReadAnswers() {
-  const multi = key => Array.from($(`compass-answer-${key}`)?.selectedOptions || []).map(o=>o.value);
-  const single = key => $(`compass-answer-${key}`)?.value || '';
+  const multi = key => Array.from(document.querySelectorAll(`input[name="compass-answer-${key}"]:checked`)).map(o=>o.value).filter(Boolean);
+  const single = key => document.querySelector(`input[name="compass-answer-${key}"]:checked`)?.value || '';
   return {
     adventure_types:multi('adventure_types'), adventure_level:single('adventure_level'),
     experience_level:single('experience_level'), physical_level:single('physical_level'),
     accommodation_types:multi('accommodation_types'), environments:multi('environments'),
-    duration: $('compass-duration')?.value || '', motivations:multi('motivations')
+    duration: document.querySelector('input[name="compass-duration"]:checked')?.value || '',
+    motivations:multi('motivations')
   };
 }
 
