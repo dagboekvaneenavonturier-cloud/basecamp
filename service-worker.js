@@ -1,5 +1,5 @@
 
-const CACHE = 'basecamp-shell-v3';
+const CACHE = 'basecamp-shell-v4';
 
 const APP_FILES = [
   './',
@@ -30,11 +30,63 @@ self.addEventListener('activate', event => {
   );
 });
 
+self.addEventListener('push', event => {
+  let data = {};
+
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {}
+
+  const title = data.title || 'BASECAMP';
+
+  const options = {
+    body: data.body || 'Je hebt een nieuwe melding.',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    data: {
+      url: data.url || './index.html'
+    },
+    tag: data.tag || 'basecamp-notification'
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+
+  const target = new URL(
+    event.notification.data?.url || './index.html',
+    self.location.origin
+  ).href;
+
+  event.waitUntil(
+    clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true
+    }).then(list => {
+      for (const client of list) {
+        if ('focus' in client) {
+          client.navigate(target);
+          return client.focus();
+        }
+      }
+
+      return clients.openWindow(target);
+    })
+  );
+});
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== 'GET' || url.origin !== self.location.origin) {
+  if (
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin
+  ) {
     return;
   }
 
@@ -43,14 +95,21 @@ self.addEventListener('fetch', event => {
       fetch(request)
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+
+          caches.open(CACHE).then(cache =>
+            cache.put('./index.html', copy)
+          );
+
           return response;
         })
         .catch(async () => {
-          return (await caches.match('./index.html')) ||
-            (await caches.match('./'));
+          return (
+            (await caches.match('./index.html')) ||
+            (await caches.match('./'))
+          );
         })
     );
+
     return;
   }
 
@@ -66,8 +125,12 @@ self.addEventListener('fetch', event => {
         return fetch(request).then(response => {
           if (response.ok) {
             const copy = response.clone();
-            caches.open(CACHE).then(cache => cache.put(request, copy));
+
+            caches.open(CACHE).then(cache =>
+              cache.put(request, copy)
+            );
           }
+
           return response;
         });
       })
