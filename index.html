@@ -900,170 +900,85 @@ async function addPost() {
 
 
 async function home() {
-  const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination,description,start_date,end_date,status,image_url,booking_status,website_url')
-    .eq('status','published')
-    .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
-    .order('start_date')
-    .limit(3);
-
-  if (tripError) throw tripError;
-
-  const {data:posts,error:postError} = await sb.from('posts')
-    .select('id,user_id,content,image_url,created_at')
-    .order('created_at',{ascending:false})
-    .limit(3);
-
-  if (postError) throw postError;
-
-  const names = await profilesFor((posts || []).map(p => p.user_id));
-
   return `
     <div class="hero" style="
       background:linear-gradient(120deg,rgba(25,48,35,.96),rgba(74,101,70,.86)),
       url('https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=1400');
       background-size:cover;
       background-position:center;
-      padding:38px 27px;
+      padding:42px 28px;
       ">
-      <div class="eyebrow">JOUW DIGITALE UITVALSBASIS</div>
-      <h1>Welkom terug,<br>${esc(me.display_name || 'avonturier')}.</h1>
-      <p style="max-width:520px;line-height:1.7">
-        Nieuwe plannen, onverwachte ontmoetingen en avonturen die wachten
-        om beleefd te worden. Fijn dat je hier bent.
+      <div class="eyebrow">DAGBOEK VAN EEN AVONTURIER PRESENTEERT</div>
+      <h1>Welkom in BASECAMP.</h1>
+      <p style="max-width:650px;line-height:1.8">
+        De digitale uitvalsbasis van Dagboek van een Avonturier. Een plek waar
+        avonturiers elkaar ontmoeten, plannen smeden en inspiratie vinden voor
+        hun volgende tocht.
       </p>
-      <button class="btn gold" onclick="go('community')">
-        Ontmoet andere avonturiers →
-      </button>
+      <button class="btn gold" onclick="go('discover')">Ontdek onze avonturen →</button>
     </div>
 
-    <div style="margin:28px 0 12px">
+    <section style="margin:28px 0 24px">
+      <div class="eyebrow">WIE ZIJN WE?</div>
+      <h2 style="font:25px Georgia;margin:7px 0 12px">Kleine groepen. Groot avontuur.</h2>
+      <p style="line-height:1.8;max-width:850px">
+        Dagboek van een Avonturier organiseert kleinschalige avontuurlijke reizen,
+        packrafttochten, trekkings en expedities. We trekken eropuit met een klein,
+        betrokken begeleidingsteam en geloven in persoonlijke aanpak, goede
+        voorbereiding en samen grenzen verleggen. Niet zomaar een reis, maar een
+        avontuur waar je naartoe leeft, onderweg op elkaar kunt rekenen en nog
+        lang verhalen over vertelt.
+      </p>
+      <p style="line-height:1.8;max-width:850px">
+        BASECAMP brengt die avontuurlijke wereld samen op één plek. Hier blijf je
+        verbonden met onze reizen en met de mensen die dezelfde goesting hebben
+        om buiten te zijn, nieuwe plekken te ontdekken en samen op pad te gaan.
+      </p>
+    </section>
+
+    <section style="margin:30px 0">
       <div class="eyebrow">JOUW UITVALSBASIS</div>
-      <h2 style="font:25px Georgia;margin:7px 0">
-        Wat brengt je vandaag hier?
-      </h2>
-      <p class="muted">
-        Laat je inspireren, ontmoet gelijkgestemden of ontdek je volgende avontuur.
-      </p>
-    </div>
-
-    <div class="grid">
-      <div class="card" onclick="go('community')" style="cursor:pointer">
-        <div style="font-size:25px">🏕️</div>
-        <h3>Ontmoet</h3>
-        <p class="muted">Deel verhalen, foto's en plannen met de community.</p>
-        <span class="tag">Naar de community →</span>
-      </div>
-
-      <div class="card" onclick="go('discover')" style="cursor:pointer">
-        <div style="font-size:25px">🧭</div>
-        <h3>Ontdek</h3>
-        <p class="muted">Vind nieuwe expedities, trekkings en packraftreizen.</p>
-        <span class="tag">Bekijk avonturen →</span>
-      </div>
-
-      <div class="card" onclick="go('chat')" style="cursor:pointer">
-        <div style="font-size:25px">💬</div>
-        <h3>Praat mee</h3>
-        <p class="muted">Wissel ideeën uit en leer andere avonturiers kennen.</p>
-        <span class="tag">Naar de chat →</span>
-      </div>
-
-      <div class="card" onclick="go('profile')" style="cursor:pointer">
-        <div style="font-size:25px">🎒</div>
-        <h3>Stel jezelf voor</h3>
-        <p class="muted">Vertel wie je bent en waar jouw avontuurlijke interesses liggen.</p>
-        <span class="tag">Mijn profiel →</span>
-      </div>
-    </div>
-
-    <div style="margin-top:30px">
-      <div class="row">
-        <div>
-          <div class="eyebrow">DE VOLGENDE HORIZON</div>
-          <h2 style="font:25px Georgia;margin:7px 0">
-            Ontdek onze avonturen
-          </h2>
-        </div>
-        <button class="btn light" onclick="go('discover')">
-          Alle reizen →
-        </button>
-      </div>
-
+      <h2 style="font:25px Georgia;margin:7px 0">Wat kun je hier doen?</h2>
+      <p class="muted" style="line-height:1.7">BASECAMP is er om inspiratie om te zetten in plannen — en plannen in avonturen.</p>
       <div class="grid">
-        ${(trips || []).map(t => `
-          <div class="card">
-            <span class="tag">${esc(t.destination || 'Avontuur')}</span>
-            ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" style="width:100%;height:190px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
-            <h3>${esc(t.title)}</h3>
-            <p class="muted">
-              ${esc(t.description || 'Ontdek dit avontuur van Dagboek van een Avonturier.')}
-            </p>
-            ${t.start_date ? `
-              <p class="muted">
-                📅 ${new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE')}
-                ${t.end_date ? ' – '+new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE') : ''}
-              </p>
-            ` : ''}
-            ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
-          </div>
-        `).join('') || `
-          <div class="card">
-            <p class="muted">
-              Nieuwe avonturen verschijnen hier binnenkort.
-            </p>
-          </div>
-        `}
-      </div>
-    </div>
-
-    <div style="margin-top:30px">
-      <div class="eyebrow">VANUIT HET BASECAMP</div>
-      <h2 style="font:25px Georgia;margin:7px 0">
-        Wat leeft er in de community?
-      </h2>
-      <p class="muted">
-        Verhalen, foto's en updates van andere avonturiers.
-      </p>
-
-      ${(posts || []).map(p => `
-        <article class="post">
-          <div class="feedtop">
-            ${profileIdentity(names[p.user_id], p.user_id)}
-            · ${new Date(p.created_at).toLocaleDateString('nl-BE')}
-          </div>
-          ${p.content ? `<p>${linkifyText(p.content)}</p>` : ''}
-          ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Communityfoto" loading="lazy"></a>`).join('')}</div>` : ''}
-        </article>
-      `).join('') || `
-        <div class="card">
-          <p class="muted">
-            Er zijn nog geen berichten. Misschien wordt jouw verhaal wel het eerste!
-          </p>
+        <div class="card" onclick="go('discover')" style="cursor:pointer">
+          <div style="font-size:27px">🧭</div>
+          <h3>Ontdek reizen</h3>
+          <p class="muted">Bekijk onze packraftreizen, trekkings en expedities en vind jouw volgende avontuur.</p>
+          <span class="tag">Ontdek reizen →</span>
         </div>
-      `}
+        <div class="card" onclick="go('community')" style="cursor:pointer">
+          <div style="font-size:27px">🏕️</div>
+          <h3>Leer avonturiers kennen</h3>
+          <p class="muted">Ontmoet gelijkgestemden, ontdek wie mee op pad gaat en bouw nieuwe contacten op.</p>
+          <span class="tag">Naar de community →</span>
+        </div>
+        <div class="card" onclick="go('profile')" style="cursor:pointer">
+          <div style="font-size:27px">🎒</div>
+          <h3>Volg je reizen</h3>
+          <p class="muted">Bekijk je geboekte avonturen en vind er alle praktische informatie en voorbereiding terug.</p>
+          <span class="tag">Mijn avonturen →</span>
+        </div>
+        <div class="card" onclick="go('community')" style="cursor:pointer">
+          <div style="font-size:27px">📸</div>
+          <h3>Deel ervaringen en foto's</h3>
+          <p class="muted">Vertel over je tochten, deel beelden, stel vragen en inspireer andere avonturiers.</p>
+          <span class="tag">Deel iets met de community →</span>
+        </div>
+      </div>
+    </section>
 
-      <button class="btn" onclick="go('community')">
-        Naar alle communityberichten →
-      </button>
-    </div>
-
-    <div class="hero" style="margin-top:30px;padding:25px">
-      <div class="eyebrow">KLEINE GROEPEN, GROOT AVONTUUR</div>
-      <h2 style="font:25px Georgia;margin:10px 0">
-        Misschien trekken we binnenkort samen op pad.
-      </h2>
-      <p>
-        Ontdek onze avonturen, stel je vragen en leer de mensen achter
-        Dagboek van een Avonturier kennen.
+    <div class="hero" style="margin-top:30px;padding:27px 28px">
+      <div class="eyebrow">HET AVONTUUR BEGINT HIER</div>
+      <h2 style="font:25px Georgia;margin:10px 0">Zin om mee op pad te gaan?</h2>
+      <p style="max-width:650px;line-height:1.7">
+        Neem rustig een kijkje, stel je voor aan de community en ontdek welk
+        avontuur bij jou past. We ontmoeten je graag ergens onderweg.
       </p>
-      <button class="btn gold" onclick="go('discover')">
-        Vind jouw volgende avontuur →
-      </button>
+      <button class="btn gold" onclick="go('discover')">Vind jouw volgende avontuur →</button>
     </div>
   `;
 }
-
 
 function communityTabs(active) {
   return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='feed'?'active':''}" onclick="setCommunityMode('feed')">◎ Communityberichten</button><button type="button" class="${active==='adventurers'?'active':''}" onclick="setCommunityMode('adventurers')">♧ Avonturiers</button></div>`;
