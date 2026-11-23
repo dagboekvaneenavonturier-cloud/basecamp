@@ -48,7 +48,7 @@ textarea{min-height:80px}
 .feedtop{font-size:12px;color:#68756b}
 .post p{white-space:pre-wrap}
 .post button{background:none;border:0;color:#617064;cursor:pointer}
-.post img{display:block}
+.post img{display:block}.post-photo-grid,.message-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin:10px 0}.post-photo-grid img{width:100%;height:180px;object-fit:cover;border-radius:9px}.message-photo-grid{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));max-width:360px}.message-photo-grid img{width:100%;height:125px;object-fit:cover;border-radius:8px;display:block}.message-text{white-space:pre-wrap;overflow-wrap:anywhere}.message-text a,.post a{color:#456b4d;text-decoration:underline;text-underline-offset:2px}.photo-previews{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:10px}.photo-previews img{width:100%;height:95px;object-fit:cover;border-radius:8px}.send{flex-wrap:wrap}.send .send-text{flex:1;min-width:120px}.send .send-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.send .send-tools input[type=file]{display:none}
 .chat{display:grid;grid-template-columns:180px 1fr;min-height:390px;border:1px solid var(--line);background:white;border-radius:12px;overflow:hidden}
 .rooms{background:#f0eee7;padding:8px}
 .rooms button{display:block;width:100%;text-align:left;padding:10px;border:0;background:none;border-radius:7px;cursor:pointer}
@@ -293,6 +293,51 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
   '"':'&quot;',
   "'":'&#39;'
 }[c]));
+
+// Veilige weergave van links, tekst en fotobijlagen.
+function linkifyText(value) {
+  const text = String(value ?? '');
+  const urlPattern = /(https?:\/\/[^\s<>\"']+|www\.[^\s<>\"']+)/gi;
+  let html = '';
+  let last = 0;
+  for (const match of text.matchAll(urlPattern)) {
+    const index = match.index;
+    let raw = match[0];
+    let url = raw;
+    while (/[.,!?;:)]$/.test(url)) url = url.slice(0, -1);
+    if (!url) continue;
+    html += esc(text.slice(last, index));
+    const trailing = raw.slice(url.length);
+    const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+    html += `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${esc(url)}</a>${esc(trailing)}`;
+    last = index + raw.length;
+  }
+  html += esc(text.slice(last));
+  return html.replace(/\n/g, '<br>');
+}
+
+function postImageUrls(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter(x => typeof x === 'string' && /^https?:\/\//i.test(x));
+  } catch (_) {}
+  return /^https?:\/\//i.test(value) ? [value] : [];
+}
+
+const CHAT_MEDIA_PREFIX = '[[BASECAMP_MEDIA]]';
+function messageContentHtml(value) {
+  let content = String(value ?? '');
+  let media = [];
+  if (content.startsWith(CHAT_MEDIA_PREFIX)) {
+    try {
+      const payload = JSON.parse(content.slice(CHAT_MEDIA_PREFIX.length));
+      content = payload.text || '';
+      media = Array.isArray(payload.images) ? payload.images : [];
+    } catch (_) {}
+  }
+  return `${content ? `<div class="message-text">${linkifyText(content)}</div>` : ''}${media.length ? `<div class="message-photo-grid">${media.filter(url => typeof url === 'string' && /^https?:\/\//i.test(url)).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Gedeelde foto" loading="lazy"></a>`).join('')}</div>` : ''}`;
+}
 
 const initials = s => (s || 'A')
   .split(' ')
@@ -741,16 +786,9 @@ async function postsHtml() {
         <button class="btn light" onclick="deleteCommunityPost('${p.id}')">Mijn bericht verwijderen</button>
       ` : ''}
 
-      ${p.content ? `<p>${esc(p.content)}</p>` : ''}
+      ${p.content ? `<p>${linkifyText(p.content)}</p>` : ''}
 
-      ${p.image_url ? `
-        <img
-          src="${esc(p.image_url)}"
-          alt="Foto bij communitybericht"
-          loading="lazy"
-          style="width:100%;max-height:500px;object-fit:contain;border-radius:10px;margin:10px 0"
-        >
-      ` : ''}
+      ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Foto bij communitybericht" loading="lazy"></a>`).join('')}</div>` : ''}
 
       <button onclick="toggleLike('${p.id}',${liked})">
         ${liked ? '♥' : '♡'} ${count} vind-ik-leuks
@@ -763,7 +801,7 @@ async function postsHtml() {
       ${postComments.map(c => `
         <div class="muted" style="margin:8px 0;padding:8px 10px;border-left:2px solid #d8c9a5">
           ${profileIdentity(commentNames[c.user_id], c.user_id)}:
-          ${esc(c.content)}
+          ${linkifyText(c.content)}
           ${c.user_id === me.id ? `
             <div style="margin-top:5px">
               <button class="btn light" onclick="deleteCommunityComment('${c.id}')">Mijn reactie verwijderen</button>
@@ -778,34 +816,13 @@ async function postsHtml() {
 function composer() {
   return `<div class="card">
     <div class="eyebrow">DEEL IETS MET DE COMMUNITY</div>
-
     <textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea>
-
-    <div id="imagePreview" class="hidden" style="margin-top:12px">
-      <img id="previewImage" alt="Fotovoorbeeld"
-        style="width:100%;max-height:300px;object-fit:cover;border-radius:10px">
-      <button type="button" class="btn light" onclick="removePostImage()">
-        Foto verwijderen
-      </button>
+    <div id="postPhotoPreviews" class="photo-previews"></div>
+    <div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn light" onclick="document.getElementById('postImages').click()">▧ Foto's toevoegen</button>
+      <input id="postImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" onchange="previewPostImages()">
+      <span class="muted">Max. 10 foto's · JPG, PNG, WebP of GIF · max. 8 MB per foto</span>
     </div>
-
-    <div style="margin-top:12px">
-      <button type="button" class="btn light"
-        onclick="document.getElementById('postImage').click()">
-        ▧ Foto toevoegen
-      </button>
-
-      <input
-        id="postImage"
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        class="hidden"
-        onchange="previewPostImage()"
-      >
-
-      <span class="muted">JPG, PNG, WebP of GIF · max. 8 MB</span>
-    </div>
-
     <div class="row" style="margin-top:14px">
       <span class="muted">Een vraag, verhaal of avontuur...</span>
       <button class="btn" id="postButton" onclick="addPost()">Plaatsen</button>
@@ -813,113 +830,62 @@ function composer() {
   </div>`;
 }
 
-function previewPostImage() {
-  const input = $('postImage');
-  const file = input.files[0];
-  if (!file) return;
-
+function previewPostImages() {
+  const input = $('postImages');
+  const files = Array.from(input?.files || []);
   const allowed = ['image/jpeg','image/png','image/webp','image/gif'];
-
-  if (!allowed.includes(file.type)) {
-    alert('Kies een JPG-, PNG-, WebP- of GIF-afbeelding.');
-    input.value = '';
-    return;
-  }
-
-  if (file.size > 8 * 1024 * 1024) {
-    alert('De foto mag maximaal 8 MB groot zijn.');
-    input.value = '';
-    return;
-  }
-
-  const img = $('previewImage');
-
-  if (img.dataset.objectUrl) {
-    URL.revokeObjectURL(img.dataset.objectUrl);
-  }
-
-  const url = URL.createObjectURL(file);
-  img.src = url;
-  img.dataset.objectUrl = url;
-  $('imagePreview').classList.remove('hidden');
+  if (files.length > 10) { alert("Je kunt maximaal 10 foto's tegelijk toevoegen."); input.value=''; return; }
+  const invalid = files.find(f => !allowed.includes(f.type) || f.size > 8 * 1024 * 1024);
+  if (invalid) { alert('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.'); input.value=''; $('postPhotoPreviews').innerHTML=''; return; }
+  $('postPhotoPreviews').innerHTML = files.map(file => `<div><img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld"><div class="muted">${esc(file.name)}</div></div>`).join('');
 }
 
-function removePostImage() {
-  const img = $('previewImage');
-
-  if (img.dataset.objectUrl) {
-    URL.revokeObjectURL(img.dataset.objectUrl);
+async function uploadSelectedImages(inputId) {
+  const files = Array.from($(inputId)?.files || []);
+  if (files.length > 10) throw new Error("Je kunt maximaal 10 foto's tegelijk toevoegen.");
+  const allowed = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'};
+  const urls = [];
+  const paths = [];
+  try {
+    for (const file of files) {
+      if (!allowed[file.type] || file.size > 8 * 1024 * 1024) throw new Error('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.');
+      const path = me.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + allowed[file.type];
+      const {error} = await sb.storage.from('post-images').upload(path,file,{contentType:file.type,upsert:false});
+      if (error) throw error;
+      paths.push(path);
+      urls.push(sb.storage.from('post-images').getPublicUrl(path).data.publicUrl);
+    }
+    return {urls,paths};
+  } catch (error) {
+    if (paths.length) await sb.storage.from('post-images').remove(paths);
+    throw error;
   }
+}
 
-  img.removeAttribute('src');
-  delete img.dataset.objectUrl;
-  $('postImage').value = '';
-  $('imagePreview').classList.add('hidden');
+function clearPostImages() {
+  const input = $('postImages');
+  if (input) input.value = '';
+  const previews = $('postPhotoPreviews');
+  if (previews) previews.innerHTML = '';
 }
 
 async function addPost() {
   const content = $('newPost').value.trim();
-  const file = $('postImage')?.files?.[0] || null;
-
-  if (!content && !file) {
-    alert('Schrijf een bericht of voeg een foto toe.');
-    return;
-  }
-
+  const files = Array.from($('postImages')?.files || []);
+  if (!content && !files.length) { alert("Schrijf een bericht of voeg foto's toe."); return; }
   const button = $('postButton');
   button.disabled = true;
   button.textContent = 'Bezig...';
-
-  let imageUrl = null;
-  let uploadedPath = null;
-
+  let uploadedPaths = [];
   try {
-    if (file) {
-      const extensions = {
-        'image/jpeg':'jpg',
-        'image/png':'png',
-        'image/webp':'webp',
-        'image/gif':'gif'
-      };
-
-      if (!extensions[file.type] || file.size > 8 * 1024 * 1024) {
-        throw new Error('Kies een geldige foto van maximaal 8 MB.');
-      }
-
-      const extension = extensions[file.type];
-      const path = me.id + '/' + Date.now() + '-' +
-        Math.random().toString(36).slice(2) + '.' + extension;
-
-      const {error:uploadError} = await sb.storage
-        .from('post-images')
-        .upload(path,file,{
-          contentType:file.type,
-          upsert:false
-        });
-
-      if (uploadError) throw uploadError;
-
-      uploadedPath = path;
-      imageUrl = sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
-    }
-
-    const {error} = await sb.from('posts').insert({
-      user_id:me.id,
-      content:content,
-      image_url:imageUrl
-    });
-
+    const uploaded = await uploadSelectedImages('postImages');
+    uploadedPaths = uploaded.paths;
+    const {error} = await sb.from('posts').insert({user_id:me.id,content,image_url:uploaded.urls.length ? JSON.stringify(uploaded.urls) : null});
     if (error) throw error;
-
     await render();
-
   } catch (error) {
-    if (uploadedPath) {
-      await sb.storage.from('post-images').remove([uploadedPath]);
-    }
-
+    if (uploadedPaths.length) await sb.storage.from('post-images').remove(uploadedPaths);
     alert('Bericht plaatsen mislukt: ' + (error.message || error));
-
     button.disabled = false;
     button.textContent = 'Plaatsen';
   }
@@ -1060,13 +1026,8 @@ async function home() {
             ${profileIdentity(names[p.user_id], p.user_id)}
             · ${new Date(p.created_at).toLocaleDateString('nl-BE')}
           </div>
-          ${p.content ? `<p>${esc(p.content)}</p>` : ''}
-          ${p.image_url ? `
-            <img src="${esc(p.image_url)}"
-              alt="Communityfoto"
-              loading="lazy"
-              style="width:100%;max-height:350px;object-fit:contain;border-radius:10px;margin:10px 0">
-          ` : ''}
+          ${p.content ? `<p>${linkifyText(p.content)}</p>` : ''}
+          ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Communityfoto" loading="lazy"></a>`).join('')}</div>` : ''}
         </article>
       `).join('') || `
         <div class="card">
@@ -2223,8 +2184,8 @@ async function chat() {
         return `<button class="${c.id === directRoom ? 'active' : ''}" onclick="selectDirectConversation('${c.id}')">${profileIdentity(person,uid)}<br><small class="muted">${new Date(c.last_message_at).toLocaleDateString('nl-BE')}</small></button>`;
       }).join('') || '<p class="muted" style="padding:8px">Je hebt nog geen privégesprekken. Open het profiel van een lid om een gesprek te starten.</p>'}</div>
       <div class="chatmain">${selected ? `<div style="padding:13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${profileIdentity(otherPerson,otherId)}</b><button class="btn light" onclick="hideDirectConversation('${selected.id}')">Verwijder uit mijn lijst</button></div>` : '<div class="muted" style="padding:20px">Kies een gesprek of start een nieuw gesprek via het profiel van een lid.</div>'}
-        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${esc(m.content)}${m.sender_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-        ${selected ? `<div class="send"><input id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div>` : ''}
+        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+        ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto's</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : ''}
       </div></div>`;
     setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
     if (selected) chatChannel = sb.channel('basecamp-direct-' + selected.id)
@@ -2248,8 +2209,8 @@ async function chat() {
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(g.name)}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
-      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${esc(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><button class="btn" onclick="sendMessage()">Verstuur</button></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
+      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
   if (group) chatChannel = sb.channel('basecamp-chat-' + room)
@@ -2276,13 +2237,40 @@ async function hideDirectConversation(id) {
   await render();
 }
 
+function previewChatImages(inputId, previewId) {
+  const input = $(inputId);
+  const files = Array.from(input?.files || []);
+  const allowed = ['image/jpeg','image/png','image/webp','image/gif'];
+  if (files.length > 10) { alert("Je kunt maximaal 10 foto's tegelijk toevoegen."); input.value=''; return; }
+  if (files.some(f => !allowed.includes(f.type) || f.size > 8 * 1024 * 1024)) { alert('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.'); input.value=''; return; }
+  $(previewId).innerHTML = files.map(file => `<div><img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld"><div class="muted">${esc(file.name)}</div></div>`).join('');
+}
+
+async function buildMessagePayload(textValue, inputId) {
+  const text = String(textValue || '').trim();
+  const files = Array.from($(inputId)?.files || []);
+  if (!text && !files.length) return null;
+  const uploaded = await uploadSelectedImages(inputId);
+  return {content: uploaded.urls.length ? CHAT_MEDIA_PREFIX + JSON.stringify({text,images:uploaded.urls}) : text, paths:uploaded.paths};
+}
+
 async function sendDirectMessage() {
+  if (!directRoom) return;
   const input = $('directText');
-  const content = input?.value.trim();
-  if (!content || !directRoom) return;
-  const {error} = await sb.from('direct_messages').insert({conversation_id:directRoom,sender_id:me.id,content});
-  if (error) { alert('Bericht versturen lukte niet: ' + error.message); return; }
-  await render();
+  const button = document.querySelector('#directMsgs')?.parentElement?.querySelector('.send .btn:last-of-type');
+  let paths = [];
+  try {
+    const payload = await buildMessagePayload(input?.value, 'directImages');
+    if (!payload) return;
+    paths = payload.paths;
+    const {error} = await sb.from('direct_messages').insert({conversation_id:directRoom,sender_id:me.id,content:payload.content});
+    if (error) throw error;
+    await render();
+  } catch (error) {
+    if (paths.length) await sb.storage.from('post-images').remove(paths);
+    alert('Bericht versturen lukte niet: ' + (error.message || error));
+    if (button) button.disabled = false;
+  }
 }
 
 async function deleteDirectMessage(id) {
@@ -2356,22 +2344,19 @@ async function deleteChatMessage(message_id) {
 }
 
 async function sendMessage() {
+  if (!room) return;
   const input = $('chatText');
-  if (!input) return;
-
-  const content = input.value.trim();
-  if (!content) return;
-
-  const {error} = await sb.from('messages').insert({
-    group_id:room,
-    user_id:me.id,
-    content
-  });
-
-  if (error) {
-    alert(error.message);
-  } else {
+  let paths = [];
+  try {
+    const payload = await buildMessagePayload(input?.value, 'chatImages');
+    if (!payload) return;
+    paths = payload.paths;
+    const {error} = await sb.from('messages').insert({group_id:room,user_id:me.id,content:payload.content});
+    if (error) throw error;
     await render();
+  } catch (error) {
+    if (paths.length) await sb.storage.from('post-images').remove(paths);
+    alert('Bericht versturen lukte niet: ' + (error.message || error));
   }
 }
 
