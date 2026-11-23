@@ -1085,26 +1085,63 @@ async function addComment(post_id) {
 
 /* AVONTURIERS ONTDEKKEN */
 
+function adventureMatchKey(value) {
+  return String(value || '').toLocaleLowerCase('nl').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+
 async function adventurers() {
   const {data:people,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,adventure_interests')
+    .select('id,display_name,bio,avatar_url,adventure_interests,bucketlist_public')
     .eq('status','approved').eq('discoverable',true).order('display_name');
   if (error) throw error;
-  const filtered = adventureInterestFilter === 'Alles' ? (people||[]) : (people||[]).filter(p=>(p.adventure_interests||[]).includes(adventureInterestFilter));
+
+  const visiblePeople = (people||[]).filter(person=>person.id!==me.id);
+  const filtered = adventureInterestFilter === 'Alles' ? visiblePeople : visiblePeople.filter(p=>(p.adventure_interests||[]).includes(adventureInterestFilter));
+
+  // Eigen bucketlist mag ook privé zijn; van andere leden halen we uitsluitend openbare bucketlists op.
+  const publicBucketUserIds = visiblePeople.filter(p=>p.bucketlist_public).map(p=>p.id);
+  const bucketUserIds = [...new Set([me.id,...publicBucketUserIds])];
+  let bucketRows = [];
+  if (bucketUserIds.length) {
+    const {data,error:bucketError} = await sb.from('adventure_bucketlist')
+      .select('user_id,title,destination,category,completed')
+      .in('user_id',bucketUserIds);
+    if (bucketError) throw bucketError;
+    bucketRows = data || [];
+  }
+  const myBucketItems = bucketRows.filter(item=>item.user_id===me.id);
+
   return section('ONTMOET ANDERE AVONTURIERS','Avonturiers ontdekken','Vind mensen die dromen van dezelfde tochten, rivieren en expedities.') + `
     <div class="card">
       <div class="field"><label for="adventureInterestFilter">Filter op interesse</label><select id="adventureInterestFilter" onchange="setAdventureFilter(this.value)"><option ${adventureInterestFilter==='Alles'?'selected':''}>Alles</option>${ADVENTURE_INTERESTS.map(v=>`<option value="${v}" ${adventureInterestFilter===v?'selected':''}>${v}</option>`).join('')}</select></div>
       <p class="muted">${filtered.length} ${filtered.length===1?'avonturier':'avonturiers'} gevonden die hun profiel zichtbaar hebben gemaakt.</p>
     </div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:14px">
-      ${filtered.map(person=>`<article class="card">
-        <button type="button" class="profile-identity profile-identity-button" style="font-size:17px;font-weight:700" onclick="openMemberProfile('${person.id}')">${avatarMarkup(person.avatar_url,person.display_name,'profile-avatar')}<span>${esc(person.display_name||'Avonturier')}</span></button>
-        <p class="muted" style="white-space:pre-wrap">${esc((person.bio||'').slice(0,180))}${(person.bio||'').length>180?'…':''}</p>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${(person.adventure_interests||[]).map(v=>`<span class="tag">${esc(v)}</span>`).join('')||'<span class="muted">Nog geen interesses gekozen</span>'}</div>
-        <button class="btn" onclick="openMemberProfile('${person.id}')">Bekijk profiel →</button>
-      </article>`).join('')}
+      ${filtered.map(person=>{
+        const sharedInterests = (person.adventure_interests||[]).filter(value=>(me.adventure_interests||[]).includes(value));
+        const theirBucketItems = person.bucketlist_public ? bucketRows.filter(item=>item.user_id===person.id) : [];
+        const sharedAdventures = [];
+        for (const mine of myBucketItems) {
+          const mineTitle = adventureMatchKey(mine.title);
+          const mineDestination = adventureMatchKey(mine.destination);
+          const match = theirBucketItems.find(theirs=>mineTitle && mineTitle===adventureMatchKey(theirs.title));
+          const destinationMatch = !match && mineDestination ? theirBucketItems.find(theirs=>mineDestination===adventureMatchKey(theirs.destination)) : null;
+          const sharedLabel = match ? (match.title||mine.title) : destinationMatch ? `Bestemming: ${mine.destination}` : '';
+          if (sharedLabel && !sharedAdventures.some(item=>adventureMatchKey(item.title)===adventureMatchKey(sharedLabel))) {
+            sharedAdventures.push({title:sharedLabel});
+          }
+        }
+        return `<article class="card">
+          <button type="button" class="profile-identity profile-identity-button" style="font-size:17px;font-weight:700" onclick="openMemberProfile('${person.id}')">${avatarMarkup(person.avatar_url,person.display_name,'profile-avatar')}<span>${esc(person.display_name||'Avonturier')}</span></button>
+          <p class="muted" style="white-space:pre-wrap">${esc((person.bio||'').slice(0,180))}${(person.bio||'').length>180?'…':''}</p>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${(person.adventure_interests||[]).map(v=>`<span class="tag">${esc(v)}</span>`).join('')||'<span class="muted">Nog geen interesses gekozen</span>'}</div>
+          ${sharedInterests.length?`<div style="border-top:1px solid var(--line,#ddd);padding-top:10px;margin-top:10px"><b>🤝 ${sharedInterests.length} gedeelde ${sharedInterests.length===1?'interesse':'interesses'}</b><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">${sharedInterests.map(v=>`<span class="tag">${esc(v)}</span>`).join('')}</div></div>`:`<p class="muted" style="font-size:13px;margin:10px 0">Nog geen gedeelde interesses.</p>`}
+          ${sharedAdventures.length?`<div style="border-top:1px solid var(--line,#ddd);padding-top:10px;margin-top:10px"><b>🏕️ Gedeelde avonturen</b><ul style="margin:7px 0 0;padding-left:19px">${sharedAdventures.slice(0,4).map(item=>`<li>${esc(item.title)}</li>`).join('')}</ul>${sharedAdventures.length>4?`<small class="muted">+ ${sharedAdventures.length-4} meer</small>`:''}</div>`:person.bucketlist_public?`<p class="muted" style="font-size:13px;margin:10px 0">Nog geen overeenkomende avonturen op jullie bucketlists.</p>`:`<p class="muted" style="font-size:13px;margin:10px 0">Deze avonturier deelt de bucketlist niet openbaar.</p>`}
+          <button class="btn" onclick="openMemberProfile('${person.id}')">Bekijk profiel →</button>
+        </article>`;
+      }).join('')}
     </div>
-    ${filtered.length===0?'<div class="card"><p class="muted">Er zijn nog geen avonturiers die bij deze filter passen. Je kunt zelf je profiel zichtbaar maken via Mijn profiel.</p></div>':''}`;
+    ${filtered.length===0?'<div class="card"><p class="muted">Er zijn nog geen andere avonturiers die bij deze filter passen. Je kunt zelf je profiel zichtbaar maken via Mijn profiel.</p></div>':''}`;
 }
 
 async function setAdventureFilter(value) {
