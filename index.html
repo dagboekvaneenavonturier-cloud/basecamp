@@ -3,6 +3,7 @@
 
 
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -2486,6 +2487,134 @@ async function saveProfile() {
 
 
 
+
+/* AVONTURENKOMPAS - REISPARAMETERS */
+
+const COMPASS_OPTIONS = {
+  adventure_types: [
+    ['trekking','Trekking'],['packraften','Packraften'],['expeditie','Expeditie'],
+    ['bergbeklimmen','Bergbeklimmen'],['survival','Survival'],['micro_avontuur','Micro-avontuur']
+  ],
+  adventure_level: [
+    ['kennismaking','Kennismaking'],['uitdagend','Uitdagend'],
+    ['intensief','Intensief'],['expeditie','Expeditieniveau']
+  ],
+  physical_level: [
+    ['licht','Licht'],['gemiddeld','Gemiddeld'],['zwaar','Zwaar'],['zeer_zwaar','Zeer zwaar']
+  ],
+  experience_level: [
+    ['geen','Geen ervaring vereist'],['enige','Enige ervaring gewenst'],
+    ['specifiek','Specifieke ervaring gewenst'],['ervaren','Ervaren avonturiers']
+  ],
+  required_skills: [
+    ['wildwater','Wildwater'],['navigatie','Kaart en kompas'],['bergbeklimming','Bergbeklimming'],
+    ['hoogte','Hoogte-ervaring'],['kamperen','Kampeerervaring'],['zelfstandig_koken','Buiten koken'],
+    ['geen','Geen specifieke vaardigheden']
+  ],
+  accommodation_types: [
+    ['accommodatie','Accommodatie'],['berghut','Berghut / guesthouse'],
+    ['camping','Camping'],['wildkamperen','Wildkamperen'],['wildernis','Afgelegen wildernis']
+  ],
+  environments: [
+    ['bergen','Bergen'],['rivieren','Rivieren'],['jungle','Jungle'],['woestijn','Woestijn'],
+    ['bossen','Bossen'],['fjorden','Fjorden'],['kust','Kust / zee']
+  ],
+  motivations: [
+    ['vaardigheden_leren','Nieuwe vaardigheden leren'],['grenzen_verleggen','Grenzen verleggen'],
+    ['natuur','Tot rust komen in de natuur'],['ontdekken','Bijzondere plekken ontdekken'],
+    ['teamwork','Samen iets beleven'],['afzondering','Afgelegen gebieden ervaren']
+  ]
+};
+
+function compassSingleField(prefix, key, label, selected) {
+  const options = COMPASS_OPTIONS[key] || [];
+  return `<div class="field"><label for="${prefix}-${key}">${label}</label>
+    <select id="${prefix}-${key}">${options.map(([value,text]) =>
+      `<option value="${value}" ${selected===value?'selected':''}>${text}</option>`
+    ).join('')}</select></div>`;
+}
+
+function compassMultiField(prefix, key, label, selected = []) {
+  const chosen = Array.isArray(selected) ? selected : [];
+  const options = COMPASS_OPTIONS[key] || [];
+  return `<div class="field"><label for="${prefix}-${key}">${label}</label>
+    <select id="${prefix}-${key}" multiple size="${Math.min(options.length,4)}" style="min-height:92px">
+      ${options.map(([value,text]) =>
+        `<option value="${value}" ${chosen.includes(value)?'selected':''}>${text}</option>`
+      ).join('')}
+    </select><small class="muted">Gebruik Ctrl (Chromebook: Ctrl) om meerdere opties te selecteren.</small></div>`;
+}
+
+function compassProfileForm(prefix, profile = {}) {
+  return `<div class="card" style="background:#f8f7f1;border-color:#d9dfd3">
+    <div class="eyebrow">AVONTURENKOMPAS</div>
+    <h4 style="margin:6px 0">Voor welke avonturiers is deze reis geschikt?</h4>
+    <p class="muted">Selecteer de kenmerken die bij deze reis passen. Meerdere keuzes zijn mogelijk waar dat logisch is.</p>
+    <div class="grid">
+      ${compassMultiField(prefix,'adventure_types','Type avontuur',profile.adventure_types)}
+      ${compassSingleField(prefix,'adventure_level','Avontuurlijk niveau',profile.adventure_level || 'uitdagend')}
+      ${compassSingleField(prefix,'physical_level','Fysieke uitdaging',profile.physical_level || 'gemiddeld')}
+      ${compassSingleField(prefix,'experience_level','Ervaringsniveau',profile.experience_level || 'geen')}
+      ${compassMultiField(prefix,'required_skills','Benodigde vaardigheden',profile.required_skills)}
+      ${compassMultiField(prefix,'accommodation_types','Overnachting en comfort',profile.accommodation_types)}
+      ${compassMultiField(prefix,'environments','Omgeving',profile.environments)}
+      ${compassMultiField(prefix,'motivations','Wat haalt iemand uit deze reis?',profile.motivations)}
+    </div>
+    <div class="grid">
+      <div class="field"><label for="${prefix}-duration_min_days">Minimum aantal dagen</label>
+        <input id="${prefix}-duration_min_days" type="number" min="1" max="365" value="${profile.duration_min_days ?? ''}" placeholder="Bijv. 7"></div>
+      <div class="field"><label for="${prefix}-duration_max_days">Maximum aantal dagen</label>
+        <input id="${prefix}-duration_max_days" type="number" min="1" max="365" value="${profile.duration_max_days ?? ''}" placeholder="Bijv. 14"></div>
+    </div>
+    <div class="field"><label for="${prefix}-suitability_level">Geschiktheid voor deelnemers</label>
+      <select id="${prefix}-suitability_level">
+        <option value="beginner" ${(profile.suitability_level||'beginner')==='beginner'?'selected':''}>Geschikt voor beginners</option>
+        <option value="met_voorbereiding" ${profile.suitability_level==='met_voorbereiding'?'selected':''}>Geschikt met voorbereiding</option>
+        <option value="ervaring_vereist" ${profile.suitability_level==='ervaring_vereist'?'selected':''}>Ervaring vereist</option>
+      </select>
+    </div>
+    <label style="display:flex;gap:9px;align-items:center;font-size:13px;font-weight:650">
+      <input id="${prefix}-preparation_available" type="checkbox" style="width:auto" ${profile.preparation_available?'checked':''}>
+      Voor deze reis is een voorbereidingstraject beschikbaar
+    </label>
+  </div>`;
+}
+
+function readCompassProfile(prefix) {
+  const readMulti = key => Array.from($(`${prefix}-${key}`)?.selectedOptions || []).map(option=>option.value);
+  const numberOrNull = key => {
+    const value = $(`${prefix}-${key}`)?.value;
+    return value === '' || value == null ? null : Number(value);
+  };
+  return {
+    adventure_types:readMulti('adventure_types'),
+    adventure_level:$(`${prefix}-adventure_level`).value,
+    physical_level:$(`${prefix}-physical_level`).value,
+    experience_level:$(`${prefix}-experience_level`).value,
+    required_skills:readMulti('required_skills'),
+    accommodation_types:readMulti('accommodation_types'),
+    environments:readMulti('environments'),
+    motivations:readMulti('motivations'),
+    duration_min_days:numberOrNull('duration_min_days'),
+    duration_max_days:numberOrNull('duration_max_days'),
+    suitability_level:$(`${prefix}-suitability_level`).value,
+    preparation_available:$(`${prefix}-preparation_available`).checked,
+    updated_at:new Date().toISOString()
+  };
+}
+
+async function saveCompassProfile(tripId, prefix) {
+  if (me?.role !== 'admin') throw new Error('Alleen beheerders kunnen de Avonturenkompas-parameters aanpassen.');
+  const profile = readCompassProfile(prefix);
+  if (profile.duration_min_days && profile.duration_max_days &&
+      profile.duration_max_days < profile.duration_min_days) {
+    throw new Error('Het maximum aantal dagen mag niet lager zijn dan het minimum aantal dagen.');
+  }
+  const {error} = await sb.from('adventure_compass_profiles')
+    .upsert({trip_id:tripId,...profile},{onConflict:'trip_id'});
+  if (error) throw error;
+}
+
 function adminMenu(active) {
   const items = [
     ['overview','▦','Overzicht'],['activity','◷','Activiteit'],['members','♙','Leden'],['trips','⌖','Reizen'],
@@ -2631,24 +2760,49 @@ async function admin() {
     const {data:participants,error:participantError} = await sb.from('trip_participants').select('id,trip_id,user_id,confirmed_at');
     if (participantError) throw participantError;
     const names = await profilesFor([...(interests||[]).map(i=>i.user_id),...(participants||[]).map(i=>i.user_id)]);
+    const compassResult = await sb.from('adventure_compass_profiles').select('*');
+    if (compassResult.error) throw compassResult.error;
+    const compassProfiles = Object.fromEntries((compassResult.data||[]).map(profile=>[profile.trip_id,profile]));
     const today = new Date().toISOString().slice(0,10);
     const drafts = (trips||[]).filter(t=>t.status==='draft');
     const upcoming = (trips||[]).filter(t=>t.status==='published' && (!t.end_date || t.end_date>=today));
     const past = (trips||[]).filter(t=>t.status==='completed' || (t.status==='published' && t.end_date && t.end_date<today));
-    const renderTrip = t => { const people=(interests||[]).filter(i=>i.trip_id===t.id); const confirmed=(participants||[]).filter(x=>x.trip_id===t.id); return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
+    const renderTrip = t => {
+      const people=(interests||[]).filter(i=>i.trip_id===t.id);
+      const confirmed=(participants||[]).filter(x=>x.trip_id===t.id);
+      const profile=compassProfiles[t.id] || {};
+      const compassEditor = me.role==='admin'
+        ? `<details style="margin-top:12px"><summary>Avonturenkompas-parameters instellen / bewerken</summary>
+            <div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">
+              ${compassProfileForm('compass-'+t.id,profile)}
+              <button class="btn" onclick="saveExistingCompassProfile('${t.id}')">Parameters opslaan</button>
+            </div></details>`
+        : `<p class="muted" style="font-size:12px">Avonturenkompas-parameters kunnen door een beheerder worden ingesteld.</p>`;
+      return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
       <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
       ${people.length?`<p>${people.map(i=>memberLink(i.user_id,names[i.user_id])).join('')}</p>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
       <details><summary>Deelnemers en patch beheren</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">${confirmed.map(x=>`<div class="row" style="padding:5px 0;justify-content:space-between">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen bevestigde deelnemers.</p>'}
       <div class="field"><label>Deelnemer bevestigen</label><select id="participant-${t.id}"><option value="">Kies een lid...</option>${memberOptions}</select></div><button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
       <div class="field" style="margin-top:12px"><label>Patchafbeelding</label>${t.patch_image_url?`<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:100px;height:100px;object-fit:contain">`:''}<input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn light" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button></div></div></details>
-      ${t.status==='published'?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Verwijderen uit aanbod</button>`:''}</div>`; };
+      ${compassEditor}
+      ${t.status==='published'?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Verwijderen uit aanbod</button>`:''}</div>`;
+    };
     const sections = [['Gepland',upcoming],['Afgelopen',past],['Concepten',drafts]];
     const memberResult = await sb.from('profiles').select('id,display_name').eq('status','approved').order('display_name').limit(500);
     if (memberResult.error) throw memberResult.error;
     const memberOptions = (memberResult.data||[]).map(u=>`<option value="${u.id}">${esc(u.display_name||'Avonturier')}</option>`).join('');
-    // Add member choices to every participant selector after the page is rendered.
     return header + `${sections.map(([label,list])=>`<div class="card"><h3>${label} <span class="tag">${list.length}</span></h3>${list.map(renderTrip).join('')||'<p class="muted">Geen reizen in deze categorie.</p>'}</div>`).join('')}
-      <div class="card"><h3>Reis toevoegen</h3><input id="tn" placeholder="Naam reis"><input id="tdest" placeholder="Bestemming" style="margin:8px 0"><input id="ts" type="date"><input id="te" type="date" style="margin:8px 0"><textarea id="tx" placeholder="Omschrijving"></textarea><input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0"><button class="btn light" onclick="addTrip('draft')">Opslaan als concept</button> <button class="btn" onclick="addTrip('published')">Reis publiceren</button></div>`;
+      <div class="card"><h3>Reis toevoegen</h3>
+        <input id="tn" placeholder="Naam reis">
+        <input id="tdest" placeholder="Bestemming" style="margin:8px 0">
+        <input id="ts" type="date">
+        <input id="te" type="date" style="margin:8px 0">
+        <textarea id="tx" placeholder="Omschrijving"></textarea>
+        <input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
+        ${me.role==='admin' ? `<details style="margin-top:12px"><summary>Avonturenkompas-parameters voor deze reis instellen</summary><div style="margin-top:10px">${compassProfileForm('compass-new',{})}</div></details>` : ''}
+        <button class="btn light" onclick="addTrip('draft')">Opslaan als concept</button>
+        <button class="btn" onclick="addTrip('published')">Reis publiceren</button>
+      </div>`;
   }
 
   if (adminSection === 'community') {
@@ -2731,6 +2885,16 @@ async function publish() {
   else await render();
 }
 
+async function saveExistingCompassProfile(tripId) {
+  try {
+    await saveCompassProfile(tripId,'compass-'+tripId);
+    alert('De Avonturenkompas-parameters zijn opgeslagen.');
+    await render();
+  } catch (error) {
+    alert('Parameters opslaan mislukt: ' + (error.message || error));
+  }
+}
+
 async function addTrip(status = 'published') {
   const title = $('tn').value.trim();
   if (!title) return alert('Vul een reisnaam in.');
@@ -2763,7 +2927,7 @@ async function addTrip(status = 'published') {
       .getPublicUrl(path).data.publicUrl;
   }
 
-  const {error} = await sb.from('trips').insert({
+  const {data:createdTrip,error} = await sb.from('trips').insert({
     title,
     destination:$('tdest').value,
     description:$('tx').value,
@@ -2771,10 +2935,25 @@ async function addTrip(status = 'published') {
     end_date:$('te').value || null,
     image_url:imageUrl,
     status:status === 'draft' ? 'draft' : 'published'
-  });
+  }).select('id').single();
 
-  if (error) alert(error.message);
-  else await render();
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  if (me.role === 'admin') {
+    try {
+      await saveCompassProfile(createdTrip.id,'compass-new');
+    } catch (compassError) {
+      alert('De reis is aangemaakt, maar de Avonturenkompas-parameters konden niet worden opgeslagen: ' + (compassError.message || compassError));
+      await render();
+      return;
+    }
+  }
+
+  alert(status === 'draft' ? 'Conceptreis opgeslagen.' : 'Reis gepubliceerd.');
+  await render();
 }
 
 
