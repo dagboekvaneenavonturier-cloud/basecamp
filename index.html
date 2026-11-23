@@ -11,13 +11,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#263d30">
 <link rel="manifest" href="manifest.webmanifest">
-  
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
-<meta name="theme-color" content="#263d30">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BASECAMP">
-
 <title>BASECAMP · Dagboek van een Avonturier</title>
 
 <style>
@@ -258,7 +251,6 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCount" class="notification-badge hidden"></span>
 </button>
-<button data-page="chat">☏ Chats</button>
 <button data-page="profile">◉ Mijn profiel</button>
       <button data-page="admin" id="adminNav" class="hidden">⚙ Beheer</button>
     </nav>
@@ -276,7 +268,6 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
 <button data-page="notifications">
   ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
-<button data-page="chat">☏ Chats</button>
   <button data-page="profile">◉<br>Profiel</button>
   <button data-page="admin" id="adminNavMobile" class="hidden">⚙<br>Beheer</button>
 </div>
@@ -589,10 +580,11 @@ function navSetup() {
 }
 
 async function go(p) {
+  if (p === 'chat') { p = 'community'; communityMode = 'chats'; }
   page = p;
 
   document.querySelectorAll('[data-page]').forEach(button => {
-    button.classList.toggle('active', button.dataset.page === p);
+    button.classList.toggle('active', button.dataset.page === p || (p === 'community' && button.dataset.page === 'community'));
   });
 
   if (chatChannel) {
@@ -1018,13 +1010,14 @@ async function home() {
 }
 
 function communityTabs(active) {
-  return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='feed'?'active':''}" onclick="setCommunityMode('feed')">◎ Communityberichten</button><button type="button" class="${active==='adventurers'?'active':''}" onclick="setCommunityMode('adventurers')">♧ Avonturiers</button></div>`;
+  return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='feed'?'active':''}" onclick="setCommunityMode('feed')">◎ Communityberichten</button><button type="button" class="${active==='adventurers'?'active':''}" onclick="setCommunityMode('adventurers')">♧ Avonturiers</button><button type="button" class="${active==='chats'?'active':''}" onclick="setCommunityMode('chats')">☏ Chats</button></div>`;
 }
-async function setCommunityMode(mode) { communityMode = mode === 'adventurers' ? 'adventurers' : 'feed'; await render(); }
+async function setCommunityMode(mode) { communityMode = ['adventurers','chats'].includes(mode) ? mode : 'feed'; await render(); }
 
 async function community() {
   const heading = section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.');
-  return heading + communityTabs(communityMode) + (communityMode === 'adventurers' ? await adventurers(false) : composer() + await postsHtml());
+  const content = communityMode === 'adventurers' ? await adventurers(false) : communityMode === 'chats' ? await chat() : composer() + await postsHtml();
+  return heading + communityTabs(communityMode) + content;
 }
 
 async function deleteCommunityPost(post_id) {
@@ -2287,7 +2280,7 @@ async function chat() {
       </div></div>`;
     setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
     if (selected) chatChannel = sb.channel('basecamp-direct-' + selected.id)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.' + selected.id},() => { if (page === 'chat' && chatCategory === 'direct') render(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'direct_messages',filter:'conversation_id=eq.' + selected.id},() => { if (page === 'community' && communityMode === 'chats' && chatCategory === 'direct') render(); })
       .subscribe();
     return html;
   }
@@ -2312,7 +2305,7 @@ async function chat() {
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
   if (group) chatChannel = sb.channel('basecamp-chat-' + room)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'group_id=eq.' + room},() => { if (page === 'chat') render(); }).subscribe();
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'group_id=eq.' + room},() => { if (page === 'community' && communityMode === 'chats') render(); }).subscribe();
   return html;
 }
 
