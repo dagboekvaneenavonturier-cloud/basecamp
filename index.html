@@ -69,7 +69,7 @@ textarea{min-height:80px}
 .text-link:disabled{opacity:.55;cursor:wait}
 .mobile{display:none}
 .avatar{background:#e9dfc9;color:var(--g);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;font-weight:800;overflow:hidden;flex:0 0 auto}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.profile-avatar{width:92px;height:92px;font-size:25px;margin-bottom:14px}
-.profile-identity{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}.profile-identity .avatar,.profile-member-link .avatar{width:30px;height:30px;font-size:12px;margin:0}.profile-member-link{display:inline-flex;align-items:center;gap:7px}
+.profile-identity{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}.profile-identity-button{border:0;background:transparent;padding:2px 4px;color:inherit;font:inherit;cursor:pointer;border-radius:8px}.profile-identity-button:hover{background:#eee9dc}.profile-identity .avatar,.profile-member-link .avatar{width:30px;height:30px;font-size:12px;margin:0}.profile-member-link{display:inline-flex;align-items:center;gap:7px}
 .footer{text-align:center;padding:20px;color:#8b9489;font-size:10px}
 .status{padding:15px;border-radius:10px;background:#edf0e9;margin:12px 0}
 .bucket-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}.bucket-item:last-child{border-bottom:0}.bucket-actions{display:flex;gap:6px;flex-wrap:wrap}.bucket-actions button{font-size:12px;padding:7px 9px}.bucket-title{font-weight:750}.bucket-form{background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}.bucket-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.bucket-tabs button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 13px;cursor:pointer}.bucket-tabs button.active{background:var(--g);color:#fff}.bucket-editor{background:#f7f7f2;border:1px solid #dfe4d9;border-radius:10px;padding:12px;margin-top:10px}.bucket-public-setting{display:flex;gap:10px;align-items:flex-start;background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}.bucket-public-setting input{width:auto;margin-top:4px}.bucket-public-setting label{font-weight:600;font-size:13px}.bucket-trip-link{display:inline-block;margin-top:7px;font-size:12px}
@@ -171,7 +171,8 @@ main{padding:18px 14px 85px}
     <nav id="nav">
       <button data-page="home" class="active">⌂ Home</button>
       <button data-page="community">◎ Community</button>
-      <button data-page="discover">⌖ Ontdek</button>
+      <button data-page="discover">⌖ Ontdek reizen</button>
+      <button data-page="adventurers">♧ Avonturiers</button>
       <button data-page="archive">▧ Reisarchief</button>
       <button data-page="myAdventures">⚑ Mijn avonturen</button>
 <button data-page="notifications">
@@ -191,6 +192,7 @@ main{padding:18px 14px 85px}
   <button data-page="home">⌂<br>Home</button>
   <button data-page="community">◎<br>Community</button>
   <button data-page="discover">⌖ Ontdek</button>
+  <button data-page="adventurers">♧<br>Avonturiers</button>
   <button data-page="archive">▧<br>Archief</button>
   <button data-page="myAdventures">⚑<br>Avonturen</button>
 <button data-page="notifications">
@@ -222,6 +224,8 @@ let chatChannel = null;
 let selectedTripId = null;
 let selectedArchiveTripId = null;
 let selectedProfileId = null;
+let adventureInterestFilter = 'Alles';
+const ADVENTURE_INTERESTS = ['Trekking','Packraften','Expedities','Bergsport','Micro-avonturen','Wildwater','Survival','Kamperen'];
 let bucketlistView = 'wishlist';
 let editingBucketItemId = null;
 let adminSection = 'overview';
@@ -407,7 +411,7 @@ async function refreshAuth() {
   }
 
   const {data:profile,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,role,status,left_at,bucketlist_public')
+    .select('id,display_name,bio,avatar_url,role,status,left_at,bucketlist_public,discoverable,adventure_interests')
     .eq('id',s.user.id)
     .maybeSingle();
 
@@ -478,6 +482,7 @@ async function render() {
       page === 'home' ? await home() :
       page === 'community' ? await community() :
       page === 'discover' ? await discover() :
+      page === 'adventurers' ? await adventurers() :
       page === 'archive' ? await tripArchive() :
       page === 'tripAlbum' ? await tripAlbum() :
       page === 'myAdventures' ? await myAdventures() :
@@ -542,7 +547,7 @@ async function profilesFor(ids) {
 
 function profileIdentity(person, userId, compact = false) {
   const name = person?.display_name || 'Avonturier';
-  return `<span class="profile-identity">${avatarMarkup(person?.avatar_url, name)}<span>${esc(name)}</span></span>`;
+  return `<span role="button" tabindex="0" class="profile-identity profile-identity-button" onclick="event.stopPropagation();openMemberProfile('${userId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMemberProfile('${userId}')}" title="Bekijk profiel van ${esc(name)}">${avatarMarkup(person?.avatar_url, name)}<span>${esc(name)}</span></span>`;
 }
 
 function memberLink(userId, person) {
@@ -1077,6 +1082,35 @@ async function addComment(post_id) {
   else await render();
 }
 
+
+/* AVONTURIERS ONTDEKKEN */
+
+async function adventurers() {
+  const {data:people,error} = await sb.from('profiles')
+    .select('id,display_name,bio,avatar_url,adventure_interests')
+    .eq('status','approved').eq('discoverable',true).order('display_name');
+  if (error) throw error;
+  const filtered = adventureInterestFilter === 'Alles' ? (people||[]) : (people||[]).filter(p=>(p.adventure_interests||[]).includes(adventureInterestFilter));
+  return section('ONTMOET ANDERE AVONTURIERS','Avonturiers ontdekken','Vind mensen die dromen van dezelfde tochten, rivieren en expedities.') + `
+    <div class="card">
+      <div class="field"><label for="adventureInterestFilter">Filter op interesse</label><select id="adventureInterestFilter" onchange="setAdventureFilter(this.value)"><option ${adventureInterestFilter==='Alles'?'selected':''}>Alles</option>${ADVENTURE_INTERESTS.map(v=>`<option value="${v}" ${adventureInterestFilter===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <p class="muted">${filtered.length} ${filtered.length===1?'avonturier':'avonturiers'} gevonden die hun profiel zichtbaar hebben gemaakt.</p>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:14px">
+      ${filtered.map(person=>`<article class="card">
+        <button type="button" class="profile-identity profile-identity-button" style="font-size:17px;font-weight:700" onclick="openMemberProfile('${person.id}')">${avatarMarkup(person.avatar_url,person.display_name,'profile-avatar')}<span>${esc(person.display_name||'Avonturier')}</span></button>
+        <p class="muted" style="white-space:pre-wrap">${esc((person.bio||'').slice(0,180))}${(person.bio||'').length>180?'…':''}</p>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${(person.adventure_interests||[]).map(v=>`<span class="tag">${esc(v)}</span>`).join('')||'<span class="muted">Nog geen interesses gekozen</span>'}</div>
+        <button class="btn" onclick="openMemberProfile('${person.id}')">Bekijk profiel →</button>
+      </article>`).join('')}
+    </div>
+    ${filtered.length===0?'<div class="card"><p class="muted">Er zijn nog geen avonturiers die bij deze filter passen. Je kunt zelf je profiel zichtbaar maken via Mijn profiel.</p></div>':''}`;
+}
+
+async function setAdventureFilter(value) {
+  adventureInterestFilter = ADVENTURE_INTERESTS.includes(value) ? value : 'Alles';
+  await render();
+}
 
 /* ONTDEK */
 
@@ -2124,6 +2158,13 @@ async function profile() {
       <div class="field"><label for="pphoto">Profielfoto</label><input id="pphoto" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">Kies een JPG-, PNG- of WEBP-foto van maximaal 5 MB. Je kunt later een andere foto uploaden.</small></div>
       <div class="field"><label for="pname">Naam</label><input id="pname" value="${esc(me.display_name || '')}"></div>
       <div class="field"><label for="pbio">Over mij</label><textarea id="pbio">${esc(me.bio || '')}</textarea></div>
+      <div class="discover-setting card" style="background:#f7f5ed;margin:14px 0;padding:14px">
+        <h3 style="margin-top:0">Andere avonturiers ontmoeten</h3>
+        <label style="display:flex;gap:9px;align-items:flex-start"><input id="discoverable" type="checkbox" ${me.discoverable ? 'checked' : ''} style="width:auto;margin-top:3px"><span><b>Mijn profiel tonen bij ‘Avonturiers’</b><small class="muted" style="display:block">Andere goedgekeurde leden kunnen je naam, profielfoto, voorstelling en gekozen interesses vinden.</small></span></label>
+        <div style="margin-top:13px"><b>Waarvoor mogen andere avonturiers je aanspreken?</b><div class="muted" style="margin:4px 0 9px">Kies de avonturen die jou interesseren.</div>
+          <div class="interest-options">${ADVENTURE_INTERESTS.map(v=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:5px 12px 5px 0"><input type="checkbox" name="adventureInterest" value="${v}" ${(me.adventure_interests||[]).includes(v)?'checked':''} style="width:auto">${v}</label>`).join('')}</div>
+        </div>
+      </div>
       <div class="field"><label>E-mailadres</label><input value="${esc(me.email)}" disabled></div>
       <button class="btn" onclick="saveProfile()">Profiel bewaren</button>
       <p class="muted">Accountstatus: goedgekeurd</p>
@@ -2280,7 +2321,7 @@ async function openMemberProfile(userId) {
 async function memberProfile() {
   if (!selectedProfileId) return 'Geen profiel geselecteerd.';
   const {data:person,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,bucketlist_public').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
+    .select('id,display_name,bio,avatar_url,bucketlist_public,adventure_interests').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
   if (error) throw error;
   if (!person) return 'Dit profiel is niet beschikbaar.';
 
@@ -2319,6 +2360,7 @@ async function memberProfile() {
       <h3>${esc(person.display_name || 'Avonturier')}</h3>
       <button class="btn" style="margin:8px 0 14px" onclick="startDirectChat('${person.id}')">✉️ Stuur privébericht</button>
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
+      ${(person.adventure_interests||[]).length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${person.adventure_interests.map(v=>`<span class="tag">${esc(v)}</span>`).join('')}</div>`:''}
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
       <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
       <div class="card">${patchesHtml(patches)}</div></div>
@@ -2355,8 +2397,10 @@ async function saveProfile() {
     }
 
     const bucketlist_public = Boolean($('bucketlistPublic')?.checked);
+    const discoverable = Boolean($('discoverable')?.checked);
+    const adventure_interests = [...document.querySelectorAll('input[name="adventureInterest"]:checked')].map(el=>el.value);
     const {error} = await sb.from('profiles')
-      .update({display_name,bio,avatar_url,bucketlist_public})
+      .update({display_name,bio,avatar_url,bucketlist_public,discoverable,adventure_interests})
       .eq('id',me.id);
     if (error) throw error;
 
@@ -2364,6 +2408,8 @@ async function saveProfile() {
     me.bio = bio;
     me.avatar_url = avatar_url;
     me.bucketlist_public = bucketlist_public;
+    me.discoverable = discoverable;
+    me.adventure_interests = adventure_interests;
     $('userLabel').textContent = 'Welkom, ' + display_name;
     await render();
   } catch (error) {
