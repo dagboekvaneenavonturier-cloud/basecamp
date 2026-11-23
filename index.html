@@ -269,6 +269,7 @@ let directRoom = null;
 let chatChannel = null;
 let selectedTripId = null;
 let selectedArchiveTripId = null;
+let selectedTravelTripId = null;
 let selectedProfileId = null;
 let adventureInterestFilter = 'Alles';
 let communityMode = 'feed';
@@ -581,6 +582,7 @@ async function render() {
       page === 'tripAlbum' ? await tripAlbum() :
       page === 'myAdventures' ? await myAdventures() :
       page === 'tripDiscussion' ? await tripDiscussion() :
+      page === 'travelInfo' ? await personalTravelEnvironment() :
       page === 'notifications' ? await notifications() :
       page === 'chat' ? await chat() :
       page === 'profile' ? await profile() :
@@ -1469,7 +1471,8 @@ async function myAdventures(includeHeading = true) {
 
   const participatedTrips = participatedIds
     .map(id => tripMap[id])
-    .filter(t => tripHasEnded(t));
+    .filter(Boolean);
+  const completedParticipatedTrips = participatedTrips.filter(t => tripHasEnded(t));
 
   const dateLabel = t => {
     if (!t.start_date && !t.end_date) return 'Datum volgt';
@@ -1489,6 +1492,7 @@ async function myAdventures(includeHeading = true) {
       <h3>${esc(t.title)}</h3>
       <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
       <button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>
+      ${participatedIds.includes(t.id) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
     </article>
   `;
 
@@ -1521,8 +1525,16 @@ async function myAdventures(includeHeading = true) {
     </div>
 
     <div style="margin-top:24px">
-      ${section('JOUW VERZAMELING','Avonturenpatches',`${participatedTrips.length} ${participatedTrips.length === 1 ? 'avontuur' : 'avonturen'} beleefd`)}
-      <div class="card">${patchesHtml(participatedTrips)}</div>
+      ${section('JOUW VERZAMELING','Avonturenpatches',`${completedParticipatedTrips.length} ${completedParticipatedTrips.length === 1 ? 'avontuur' : 'avonturen'} beleefd`)}
+      <div class="card">${patchesHtml(completedParticipatedTrips)}</div>
+    </div>
+
+    <div style="margin-top:24px">
+      ${section('JOUW BOEKINGEN','Mijn geboekte reizen','Open je persoonlijke reisomgeving met alle praktische informatie en voorbereiding.')}
+      <div class="grid">
+        ${participatedTrips.map(t => tripCard(t, 'Bevestigde deelname', 'Open reischat →')).join('') ||
+          '<div class="card"><p class="muted">Je hebt nog geen bevestigde boekingen.</p></div>'}
+      </div>
     </div>
 
     <div style="margin-top:24px">
@@ -1554,6 +1566,57 @@ async function myAdventures(includeHeading = true) {
       </div>
     </div>
   `;
+}
+
+
+async function openPersonalTravelEnvironment(tripId) {
+  selectedTravelTripId = tripId;
+  await go('travelInfo');
+}
+
+async function personalTravelEnvironment() {
+  if (!selectedTravelTripId) return '<div class="notice">Geen reis geselecteerd.</div>';
+  const [{data:participation,error:participationError},{data:guideAccess,error:guideAccessError}] = await Promise.all([
+    sb.from('trip_participants').select('id').eq('trip_id',selectedTravelTripId).eq('user_id',me.id).maybeSingle(),
+    sb.from('trip_guides').select('id').eq('trip_id',selectedTravelTripId).eq('guide_user_id',me.id).maybeSingle()
+  ]);
+  if (participationError) throw participationError;
+  if (guideAccessError) throw guideAccessError;
+  if (!participation && !guideAccess) return '<div class="notice error">Deze reisomgeving is alleen beschikbaar voor bevestigde deelnemers en toegewezen gidsen.</div>';
+
+  const [{data:trip,error:tripError},{data:info,error:infoError},{data:guideRows,error:guideError}] = await Promise.all([
+    sb.from('trips').select('id,title,destination,start_date,end_date,image_url').eq('id',selectedTravelTripId).maybeSingle(),
+    sb.from('trip_travel_info').select('*').eq('trip_id',selectedTravelTripId).maybeSingle(),
+    sb.from('trip_guides').select('guide_user_id,role_label,sort_order').eq('trip_id',selectedTravelTripId).order('sort_order')
+  ]);
+  for (const e of [tripError,infoError,guideError]) if (e) throw e;
+  if (!trip) return '<div class="notice">Deze reis kon niet worden gevonden.</div>';
+  const guides = await profilesFor((guideRows||[]).map(g=>g.guide_user_id));
+  const date = v => v ? new Date(v+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'}) : 'Datum volgt';
+  const block = (title,content,icon) => content ? `<section class="card"><h3>${icon||'⌖'} ${title}</h3><div style="white-space:pre-wrap;line-height:1.65">${esc(content)}</div></section>` : '';
+  return `<button class="btn light" onclick="go('profile')">← Terug naar Mijn avonturen</button>
+    <div class="calendar-hero" style="margin-top:14px">
+      <div class="eyebrow">JOUW PERSOONLIJKE REISOMGEVING</div>
+      <h2>${esc(trip.title)}</h2>
+      <p>${esc(trip.destination||'Bestemming volgt')} · ${date(trip.start_date)}${trip.end_date?' – '+date(trip.end_date):''}</p>
+    </div>
+    ${trip.image_url?`<img src="${esc(trip.image_url)}" alt="${esc(trip.title)}" style="width:100%;max-height:260px;object-fit:cover;border-radius:13px;margin-bottom:12px">`:''}
+    <section class="card"><h3>Welkom bij jouw avontuur</h3><p class="muted">Hier vind je alle praktische informatie en voorbereidingen voor deze reis. Controleer deze pagina regelmatig: het team kan informatie aanvullen of aanpassen.</p>
+    <button class="btn light" onclick="openTripDiscussion('${trip.id}')">Open de reischat →</button></section>
+    <section class="card"><h3>Het begeleidingsteam</h3>
+      ${(guideRows||[]).map(g=>{const person=guides[g.guide_user_id];return `<div class="row" style="justify-content:flex-start;padding:9px 0;border-bottom:1px solid var(--line)">${avatarMarkup(person?.avatar_url,person?.display_name)}<div><b>${esc(person?.display_name||'Begeleider')}</b><div class="muted">${esc(g.role_label||'Gids')}</div></div></div>`}).join('')||'<p class="muted">Het begeleidingsteam wordt binnenkort bekendgemaakt.</p>'}
+    </section>
+    ${block('Vluchturen begeleiding',info?.flight_info,'✈')}
+    ${block('Ontmoetingsplaats',info?.meeting_info,'⚑')}
+    ${block('Vervoer ter plaatse',info?.transport_info,'↗')}
+    ${block('Programma',info?.itinerary,'▤')}
+    ${block('Paklijst',info?.packing_list,'▣')}
+    ${block('Inbegrepen in de prijs',info?.included,'✓')}
+    ${block('Niet inbegrepen in de prijs',info?.excluded,'−')}
+    ${block('Voorbereidingstraject',info?.preparation,'⌁')}
+    ${block('Tips voor je voorbereiding',info?.preparation_tips,'✧')}
+    ${block('Belangrijke informatie',info?.important_notes,'!')}
+    ${!info && !(guideRows||[]).length?'<div class="notice">De praktische reisinformatie wordt binnenkort door het team toegevoegd.</div>':''}`;
 }
 
 async function toggleTripInterest(tripId, interested) {
@@ -2945,6 +3008,54 @@ async function setAdminSection(next) {
   await render();
 }
 
+
+function travelInfoAdminForm(tripId,info,guides,memberOptions) {
+  const field=(key,label,placeholder='')=>`<div class="field"><label>${label}</label><textarea id="travel-${key}-${tripId}" rows="4" placeholder="${placeholder}">${esc(info[key]||'')}</textarea></div>`;
+  const assigned = new Set((guides||[]).map(g=>g.guide_user_id));
+  return `<div class="card" style="background:#f7f6f1">
+    <p class="muted">Deze informatie wordt zichtbaar in de persoonlijke reisomgeving van bevestigde deelnemers. Gebruik regeleindes voor dagprogramma's en opsommingen.</p>
+    ${field('flight_info','Vluchturen begeleiding','Vluchtnummer, vertrek- en aankomsturen...')}
+    ${field('meeting_info','Ontmoetingsplaats','Waar en wanneer ontmoeten deelnemers elkaar?')}
+    ${field('transport_info','Vervoer ter plaatse')}
+    ${field('itinerary','Programma','Dag 1: ...')}
+    ${field('packing_list','Paklijst','Kleding, materiaal en persoonlijke benodigdheden...')}
+    ${field('included','Inbegrepen in de prijs')}
+    ${field('excluded','Niet inbegrepen in de prijs')}
+    ${field('preparation','Voorbereidingstraject','Trainingsweekends, bijeenkomsten en deadlines...')}
+    ${field('preparation_tips','Tips voor je voorbereiding')}
+    ${field('important_notes','Belangrijke informatie')}
+    <div class="field"><label>Gidsen en begeleiders koppelen</label>
+      <select id="travel-guides-${tripId}" multiple size="5" style="min-height:120px">
+        ${(memberOptions||'').replace(/<option value="([^"]+)">([^<]*)<\/option>/g,(all,id,name)=>`<option value="${id}" ${assigned.has(id)?'selected':''}>${name}</option>`)}
+      </select><p class="muted">Houd Ctrl (computer) of gebruik de selectiemogelijkheden op je toestel om meerdere gidsen te kiezen.</p>
+    </div>
+    <button class="btn" onclick="saveTravelInfo('${tripId}')">Reisinformatie opslaan</button>
+  </div>`;
+}
+
+async function saveTravelInfo(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const keys=['flight_info','meeting_info','transport_info','itinerary','packing_list','included','excluded','preparation','preparation_tips','important_notes'];
+  const payload={trip_id:tripId,updated_by:me.id,updated_at:new Date().toISOString()};
+  keys.forEach(key=>payload[key]=$('travel-'+key+'-'+tripId)?.value.trim()||null);
+  try {
+    const {error}=await sb.from('trip_travel_info').upsert(payload,{onConflict:'trip_id'});
+    if(error)throw error;
+    const select=$('travel-guides-'+tripId);
+    const selected=[...select.selectedOptions].map(o=>o.value);
+    const {error:deleteError}=await sb.from('trip_guides').delete().eq('trip_id',tripId);
+    if(deleteError)throw deleteError;
+    if(selected.length){
+      const {error:insertError}=await sb.from('trip_guides').insert(selected.map((guide_user_id,index)=>({trip_id:tripId,guide_user_id,role_label:'Gids',sort_order:index})));
+      if(insertError)throw insertError;
+    }
+    alert('De persoonlijke reisomgeving is bijgewerkt.');
+    await render();
+  } catch(error) {
+    alert('Opslaan van de reisomgeving is mislukt: '+(error.message||error));
+  }
+}
+
 async function admin() {
   if (!['admin','moderator'].includes(me.role)) return 'Geen toegang.';
   const header = section('TEAM BASECAMP','Beheer','Een centraal overzicht van leden, reizen en community.') + adminMenu(adminSection);
@@ -3079,6 +3190,15 @@ async function admin() {
     const compassResult = await sb.from('adventure_compass_profiles').select('*');
     if (compassResult.error) throw compassResult.error;
     const compassProfiles = Object.fromEntries((compassResult.data||[]).map(profile=>[profile.trip_id,profile]));
+    const [travelInfoResult,guideResult] = await Promise.all([
+      sb.from('trip_travel_info').select('*'),
+      sb.from('trip_guides').select('*')
+    ]);
+    if (travelInfoResult.error) throw travelInfoResult.error;
+    if (guideResult.error) throw guideResult.error;
+    const travelInfoByTrip = Object.fromEntries((travelInfoResult.data||[]).map(x=>[x.trip_id,x]));
+    const guidesByTrip = {};
+    (guideResult.data||[]).forEach(g=>{(guidesByTrip[g.trip_id] ||= []).push(g);});
     const today = new Date().toISOString().slice(0,10);
     const drafts = (trips||[]).filter(t=>t.status==='draft');
     const upcoming = (trips||[]).filter(t=>t.status==='published' && (!t.end_date || t.end_date>=today));
@@ -3101,6 +3221,9 @@ async function admin() {
       <div class="field"><label>Deelnemer bevestigen</label><select id="participant-${t.id}"><option value="">Kies een lid...</option>${memberOptions}</select></div><button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
       <div class="field" style="margin-top:12px"><label>Patchafbeelding</label>${t.patch_image_url?`<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:100px;height:100px;object-fit:contain">`:''}<input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn light" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button></div></div></details>
       ${compassEditor}
+      <details style="margin-top:12px"><summary>Persoonlijke reisomgeving beheren</summary>
+        ${travelInfoAdminForm(t.id,travelInfoByTrip[t.id]||{},guidesByTrip[t.id]||[],memberOptions)}
+      </details>
       ${t.status==='published'?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Verwijderen uit aanbod</button>`:''}</div>`;
     };
     const sections = [['Gepland',upcoming],['Afgelopen',past],['Concepten',drafts]];
