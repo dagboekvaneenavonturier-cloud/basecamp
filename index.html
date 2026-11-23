@@ -2968,7 +2968,7 @@ function calendarFilterButtons() {
 }
 async function calendarData() {
   const [tripResult,eventResult] = await Promise.all([
-    sb.from('trips').select('id,title,destination,start_date,end_date,description,image_url,status').in('status',['published','completed']).not('start_date','is',null),
+    sb.from('trips').select('id,title,destination,start_date,end_date,description,image_url,status,website_url').in('status',['published','completed']).not('start_date','is',null),
     sb.from('adventure_calendar_events').select('*').eq('status','published').order('start_date',{ascending:true})
   ]);
   if (tripResult.error) throw tripResult.error;
@@ -2989,7 +2989,7 @@ function calendarEventHtml(item) {
     <div><div class="calendar-type">${esc(kind)}</div><h3>${esc(item.title)}</h3>
       <p class="muted">${range}${when}${location}</p>
       ${item.description?`<p class="muted">${esc(item.description).slice(0,230)}${item.description.length>230?'…':''}</p>`:''}
-      ${item.calendar_kind==='trip'?`<button class="btn light" onclick="openTripDiscussion('${item.id}')">Bekijk reisgesprek</button>`:item.signup_url?`<a class="btn light" href="${esc(item.signup_url)}" target="_blank" rel="noopener">Meer informatie / inschrijven ↗</a>`:''}
+      ${item.calendar_kind==='trip'?`${item.website_url?`<a class="btn light" href="${esc(item.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}<button class="btn light" onclick="openTripDiscussion('${item.id}')">Bekijk reisgesprek</button>`:item.signup_url?`<a class="btn light" href="${esc(item.signup_url)}" target="_blank" rel="noopener">Meer informatie / inschrijven ↗</a>`:''}
     </div>
   </article>`;
 }
