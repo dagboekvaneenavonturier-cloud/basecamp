@@ -65,11 +65,14 @@ textarea{min-height:80px}
 .login{padding:25px}
 .tabs button{padding:8px 12px;border:1px solid var(--line);background:white;border-radius:20px;cursor:pointer}
 .tabs button.active{background:var(--g);color:white}
+.text-link{border:0;background:none;color:var(--m);text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:13px;font-weight:650;cursor:pointer;padding:5px}
+.text-link:disabled{opacity:.55;cursor:wait}
 .mobile{display:none}
 .avatar{background:#e9dfc9;color:var(--g);border-radius:50%;width:36px;height:36px;display:grid;place-items:center;font-weight:800;overflow:hidden;flex:0 0 auto}.avatar img{width:100%;height:100%;object-fit:cover;display:block}.profile-avatar{width:92px;height:92px;font-size:25px;margin-bottom:14px}
 .profile-identity{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}.profile-identity .avatar,.profile-member-link .avatar{width:30px;height:30px;font-size:12px;margin:0}.profile-member-link{display:inline-flex;align-items:center;gap:7px}
 .footer{text-align:center;padding:20px;color:#8b9489;font-size:10px}
 .status{padding:15px;border-radius:10px;background:#edf0e9;margin:12px 0}
+.bucket-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}.bucket-item:last-child{border-bottom:0}.bucket-actions{display:flex;gap:6px;flex-wrap:wrap}.bucket-actions button{font-size:12px;padding:7px 9px}.bucket-title{font-weight:750}.bucket-form{background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}.bucket-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.bucket-tabs button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 13px;cursor:pointer}.bucket-tabs button.active{background:var(--g);color:#fff}
 .error{background:#f8e5e1;color:#8a3025}
 .success{background:#e5efe2;color:#315c34}
 @media(max-width:680px){
@@ -115,6 +118,9 @@ main{padding:18px 14px 85px}
         <input id="pass" type="password" autocomplete="current-password">
       </div>
       <button class="btn" id="loginBtn" type="button">Inloggen</button>
+      <div style="text-align:center;margin-top:13px">
+        <button id="forgotPasswordBtn" type="button" class="text-link">Wachtwoord vergeten?</button>
+      </div>
     </div>
 
     <div id="regForm" class="hidden">
@@ -216,6 +222,7 @@ let chatChannel = null;
 let selectedTripId = null;
 let selectedArchiveTripId = null;
 let selectedProfileId = null;
+let bucketlistView = 'wishlist';
 let adminSection = 'overview';
 let adminMemberPage = 0;
 let adminMemberSearch = '';
@@ -252,8 +259,12 @@ function authTab(reg) {
 }
 
 function initClient() {
-  if (!clientLib || !cfg.supabaseUrl || !cfg.supabasePublishableKey) {
-    throw new Error('Supabase-configuratie ontbreekt. Controleer config.js.');
+  if (sb) return sb;
+  if (!clientLib) {
+    throw new Error('De Supabase-bibliotheek is niet geladen. Vernieuw de pagina en controleer je internetverbinding.');
+  }
+  if (!cfg.supabaseUrl || !cfg.supabasePublishableKey) {
+    throw new Error('Supabase-configuratie ontbreekt. Controleer of config.js naast index.html staat en de juiste configuratie bevat.');
   }
 
   sb = clientLib.createClient(
@@ -267,9 +278,17 @@ function initClient() {
       }
     }
   );
+  return sb;
+}
+
+function requireClient() {
+  if (!sb) initClient();
+  if (!sb || !sb.auth) throw new Error('Supabase kon niet worden gestart. Controleer config.js en vernieuw de pagina.');
+  return sb;
 }
 
 async function signUp() {
+  try { requireClient(); } catch (e) { notice(e.message, 'error'); return; }
   const name = $('regName').value.trim();
   const email = $('regEmail').value.trim().toLowerCase();
   const password = $('regPass').value;
@@ -308,6 +327,7 @@ async function signUp() {
 }
 
 async function signIn() {
+  try { requireClient(); } catch (e) { notice(e.message, 'error'); return; }
   const email = $('email').value.trim();
   const password = $('pass').value;
 
@@ -325,6 +345,31 @@ async function signIn() {
     notice(e.message || 'Inloggen is niet gelukt.', 'error');
   } finally {
     $('loginBtn').disabled = false;
+  }
+}
+
+async function requestPasswordReset() {
+  try { requireClient(); } catch (e) { notice(e.message, 'error'); return; }
+
+  const email = $('email').value.trim().toLowerCase();
+  if (!email) {
+    return notice('Vul eerst je e-mailadres in. Klik daarna opnieuw op “Wachtwoord vergeten?”.', 'error');
+  }
+
+  const button = $('forgotPasswordBtn');
+  button.disabled = true;
+
+  try {
+    const {error} = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: location.origin + location.pathname
+    });
+    if (error) throw error;
+
+    notice('Als er een account bestaat met dit e-mailadres, ontvang je een e-mail met een link om je wachtwoord opnieuw in te stellen. Controleer ook je spamfolder.', 'success');
+  } catch (e) {
+    notice('De herstelmail kon niet worden verstuurd: ' + (e.message || 'onbekende fout.'), 'error');
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -2063,6 +2108,15 @@ async function profile() {
     patches = (data || []).filter(t => tripHasEnded(t));
   }
 
+  const {data:bucketItems,error:bucketError} = await sb.from('adventure_bucketlist')
+    .select('id,title,destination,category,trip_id,priority,completed,created_at,completed_at')
+    .eq('user_id',me.id).order('created_at',{ascending:false});
+  if (bucketError) throw bucketError;
+
+  const {data:availableTrips,error:availableTripsError} = await sb.from('trips')
+    .select('id,title,destination,status').eq('status','published').order('start_date',{ascending:true});
+  if (availableTripsError) throw availableTripsError;
+
   return section('MIJN BASECAMP','Mijn profiel','Pas je gegevens aan en bekijk je verzamelde avonturen.')
     + `<div class="card">
       ${avatarMarkup(me.avatar_url, me.display_name, 'profile-avatar')}
@@ -2073,6 +2127,28 @@ async function profile() {
       <button class="btn" onclick="saveProfile()">Profiel bewaren</button>
       <p class="muted">Accountstatus: goedgekeurd</p>
     </div>
+    <div class="card" style="margin-top:18px">
+      ${section('DROMEN & PLANNEN','Mijn avonturenbucketlist','Welke plekken wil je nog ontdekken? Verzamel hier je dromen en vink ze af zodra je ze beleefd hebt.')}
+      <div class="bucket-tabs">
+        <button class="${bucketlistView==='wishlist'?'active':''}" onclick="setBucketlistView('wishlist')">♡ Mijn bucketlist (${(bucketItems||[]).filter(x=>!x.completed).length})</button>
+        <button class="${bucketlistView==='completed'?'active':''}" onclick="setBucketlistView('completed')">✓ Beleefd (${(bucketItems||[]).filter(x=>x.completed).length})</button>
+      </div>
+      ${bucketlistView==='wishlist' ? `<div class="bucket-form">
+        <h3 style="margin:0 0 8px;font:19px Georgia">Nieuw avontuur toevoegen</h3>
+        <div class="field"><label for="bucketTitle">Avontuur *</label><input id="bucketTitle" maxlength="120" placeholder="Bijv. De volledige Jordan Trail wandelen"></div>
+        <div class="field"><label for="bucketDestination">Bestemming</label><input id="bucketDestination" maxlength="120" placeholder="Bijv. Jordanië"></div>
+        <div class="grid">
+          <div class="field"><label for="bucketCategory">Categorie</label><select id="bucketCategory"><option value="Trekking">Trekking</option><option value="Packraften">Packraften</option><option value="Expeditie">Expeditie</option><option value="Micro-avontuur">Micro-avontuur</option><option value="Bergsport">Bergsport</option><option value="Anders">Anders</option></select></div>
+          <div class="field"><label for="bucketPriority">Prioriteit</label><select id="bucketPriority"><option value="Droom">Droom</option><option value="Grote wens">Grote wens</option><option value="Binnenkort">Binnenkort</option></select></div>
+        </div>
+        <div class="field"><label for="bucketTrip">Koppelen aan een reis van Dagboek (optioneel)</label><select id="bucketTrip"><option value="">Geen koppeling</option>${(availableTrips||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.title)}${t.destination?' · '+esc(t.destination):''}</option>`).join('')}</select></div>
+        <button class="btn" onclick="addBucketItem()">+ Toevoegen aan mijn bucketlist</button>
+      </div>` : ''}
+      <div>
+        ${bucketItems && bucketItems.filter(x=>x.completed===(bucketlistView==='completed')).length ? bucketItems.filter(x=>x.completed===(bucketlistView==='completed')).map(item=>bucketItemHtml(item,availableTrips||[])).join('') : `<p class="muted">${bucketlistView==='completed'?'Je hebt nog geen bucketlist-avonturen afgevinkt.':'Je bucketlist is nog leeg. Voeg hierboven je eerste droomavontuur toe!'}</p>`}
+      </div>
+      <p class="muted" style="margin-top:12px;font-size:11px">Je bucketlist is privé en alleen zichtbaar voor jou.</p>
+    </div>
     <div class="card" style="margin-top:18px;border:1px solid #c98b72">
       <h3>BASECAMP verlaten</h3>
       <p class="muted">Wil je geen deel meer uitmaken van de community? Je account wordt gedeactiveerd. Je eerdere berichten, foto's en reisgeschiedenis blijven bewaard.</p>
@@ -2081,6 +2157,77 @@ async function profile() {
     <div style="margin-top:22px">${section('MIJN VERZAMELING','Mijn avonturenpatches','Een tastbare herinnering aan elke reis die je met Dagboek van een Avonturier hebt beleefd.')}
       <div class="card">${patchesHtml(patches)}</div>
     </div>`;
+}
+
+function bucketItemHtml(item, trips) {
+  const linked = item.trip_id ? trips.find(t=>t.id===item.trip_id) : null;
+  return `<div class="bucket-item">
+    <div style="min-width:0;flex:1">
+      <div class="bucket-title">${item.completed?'✓ ':''}${esc(item.title)}</div>
+      <div class="muted">${[item.destination,item.category].filter(Boolean).map(esc).join(' · ') || 'Avontuur'}</div>
+      <div style="margin-top:6px"><span class="tag">${esc(item.priority)}</span>${linked?` <span class="tag">↗ ${esc(linked.title)}</span>`:''}${item.completed_at?` <span class="muted">Beleefd op ${new Date(item.completed_at).toLocaleDateString('nl-BE')}</span>`:''}</div>
+    </div>
+    <div class="bucket-actions">
+      ${item.completed?`<button class="btn light" onclick="toggleBucketItem('${item.id}',false)">Terugzetten</button>`:`<button class="btn" onclick="toggleBucketItem('${item.id}',true)">✓ Beleefd</button>`}
+      <button class="btn light" onclick="editBucketItem('${item.id}')">Bewerken</button>
+      <button class="btn light" onclick="deleteBucketItem('${item.id}')">Verwijderen</button>
+    </div>
+  </div>`;
+}
+
+async function setBucketlistView(view) {
+  bucketlistView = view === 'completed' ? 'completed' : 'wishlist';
+  await render();
+}
+
+async function addBucketItem() {
+  const title = $('bucketTitle')?.value.trim();
+  if (!title) { alert('Geef je avontuur een naam.'); return; }
+  const payload = {
+    user_id:me.id,
+    title,
+    destination:$('bucketDestination')?.value.trim() || null,
+    category:$('bucketCategory')?.value || null,
+    priority:$('bucketPriority')?.value || 'Droom',
+    trip_id:$('bucketTrip')?.value || null
+  };
+  const {error} = await sb.from('adventure_bucketlist').insert(payload);
+  if (error) { alert('Toevoegen is niet gelukt: ' + error.message); return; }
+  bucketlistView = 'wishlist';
+  await render();
+}
+
+async function toggleBucketItem(id, completed) {
+  const {error} = await sb.from('adventure_bucketlist').update({completed,completed_at:completed?new Date().toISOString():null}).eq('id',id).eq('user_id',me.id);
+  if (error) { alert('Bijwerken is niet gelukt: ' + error.message); return; }
+  bucketlistView = completed ? 'completed' : 'wishlist';
+  await render();
+}
+
+async function editBucketItem(id) {
+  const {data:item,error} = await sb.from('adventure_bucketlist').select('id,title,destination,category,priority').eq('id',id).eq('user_id',me.id).maybeSingle();
+  if (error || !item) { alert('Dit bucketlist-item kon niet worden gevonden.'); return; }
+  const title = prompt('Avontuur:',item.title);
+  if (title === null) return;
+  if (!title.trim()) { alert('De naam mag niet leeg zijn.'); return; }
+  const destination = prompt('Bestemming:',item.destination||'');
+  if (destination === null) return;
+  const category = prompt('Categorie (Trekking, Packraften, Expeditie, Micro-avontuur, Bergsport of Anders):',item.category||'Anders');
+  if (category === null) return;
+  const priority = prompt('Prioriteit (Droom, Grote wens of Binnenkort):',item.priority||'Droom');
+  if (priority === null) return;
+  const allowedPriorities = ['Droom','Grote wens','Binnenkort'];
+  if (!allowedPriorities.includes(priority.trim())) { alert('Kies als prioriteit: Droom, Grote wens of Binnenkort.'); return; }
+  const {error:updateError} = await sb.from('adventure_bucketlist').update({title:title.trim(),destination:destination.trim()||null,category:category.trim()||null,priority:priority.trim()}).eq('id',id).eq('user_id',me.id);
+  if (updateError) { alert('Aanpassen is niet gelukt: ' + updateError.message); return; }
+  await render();
+}
+
+async function deleteBucketItem(id) {
+  if (!confirm('Wil je dit avontuur van je bucketlist verwijderen?')) return;
+  const {error} = await sb.from('adventure_bucketlist').delete().eq('id',id).eq('user_id',me.id);
+  if (error) { alert('Verwijderen is niet gelukt: ' + error.message); return; }
+  await render();
 }
 
 async function leaveCommunity() {
@@ -2566,6 +2713,7 @@ $('tabLogin').onclick = () => authTab(false);
 $('tabReg').onclick = () => authTab(true);
 $('regBtn').onclick = signUp;
 $('loginBtn').onclick = signIn;
+$('forgotPasswordBtn').onclick = requestPasswordReset;
 $('logout').onclick = signOut;
 $('pendingLogout').onclick = signOut;
 
