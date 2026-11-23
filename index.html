@@ -115,6 +115,24 @@ main{padding:18px 14px 85px}
 .rooms{padding:4px}
 .rooms button{font-size:11px;padding:8px 4px}
 }
+
+/* AVONTURENKALENDER */
+.calendar-hero{position:relative;overflow:hidden;padding:25px;border-radius:18px;color:#fff;background:linear-gradient(125deg,#20382b,#526d50 68%,#82906a);margin:12px 0 18px}
+.calendar-hero:after{content:'✧';position:absolute;right:22px;top:-20px;font:130px Georgia;color:rgba(255,255,255,.09);transform:rotate(18deg)}
+.calendar-hero .eyebrow{color:#e7d39d}.calendar-hero h2{font:30px Georgia;margin:7px 0}.calendar-hero p{max-width:540px;color:#e4e9df;margin:0;font-size:13px}
+.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:15px 0}
+.calendar-month{display:flex;align-items:center;gap:9px}.calendar-month strong{font:22px Georgia;min-width:160px;text-align:center}
+.calendar-arrow{width:36px;height:36px;border:1px solid #dfe3d8;border-radius:50%;background:#fff;color:#314b36;font-size:20px;cursor:pointer}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;background:#e9e6dc;border:1px solid #e2ded2;padding:7px;border-radius:14px}
+.calendar-weekday{text-align:center;padding:7px 2px;font-size:10px;font-weight:800;letter-spacing:.7px;color:#788276}
+.calendar-day{background:#fff;min-height:88px;border-radius:8px;padding:7px 6px;min-width:0;overflow:hidden}
+.calendar-day.outside{background:#f4f2ec;color:#b2b7ae}.calendar-day.today{box-shadow:inset 0 0 0 2px #8b9d78}.calendar-day-number{font-size:12px;font-weight:800;color:#4b594c;margin-bottom:5px}.calendar-day.outside .calendar-day-number{color:#aeb5aa}
+.calendar-dot{display:block;margin:3px 0;padding:4px 5px;border-radius:5px;font-size:9px;line-height:1.25;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#e7eee2;color:#36543a;cursor:pointer;border:0;width:100%;text-align:left}
+.calendar-dot.trip{background:#e5edf2;color:#34566c}.calendar-dot.webinar{background:#f2ead5;color:#735b2e}.calendar-dot.training{background:#eee7df;color:#76533b}.calendar-dot.community{background:#eee8f1;color:#654c72}.calendar-dot.cancelled{text-decoration:line-through;opacity:.65}
+.calendar-legend{display:flex;gap:8px;flex-wrap:wrap;margin:11px 0 18px}.calendar-legend span{font-size:10px;color:#69766a;display:inline-flex;align-items:center;gap:5px}.calendar-legend i{width:8px;height:8px;border-radius:50%;display:inline-block;background:#829b75}.calendar-agenda{margin-top:20px}.calendar-event{display:grid;grid-template-columns:58px 1fr;gap:13px;padding:13px 0;border-bottom:1px solid var(--line);align-items:start}.calendar-datebox{background:#edf0e8;border-radius:10px;text-align:center;padding:8px 4px;color:#314b36}.calendar-datebox b{font:24px Georgia;display:block;line-height:1.1}.calendar-datebox small{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px}.calendar-event h3{font:17px Georgia;margin:3px 0 5px}.calendar-event p{margin:4px 0}.calendar-type{font-size:9px;text-transform:uppercase;letter-spacing:.8px;font-weight:800;color:#6e865f}.calendar-filters{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.calendar-filters button{border:1px solid #dfe3d8;background:#fff;border-radius:20px;padding:7px 11px;font-size:11px;color:#5d6a5e;cursor:pointer}.calendar-filters button.active{background:#263d30;color:#fff;border-color:#263d30}
+.calendar-admin-form{background:#f4f2e9;border:1px solid #e3dfd2;border-radius:14px;padding:16px;margin:14px 0}.calendar-admin-form h3{font:19px Georgia;margin:0 0 10px}.calendar-admin-list{display:grid;gap:8px}.calendar-admin-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px}.calendar-admin-row .muted{margin:3px 0 0}
+@media(max-width:680px){.calendar-hero{padding:22px 18px}.calendar-hero h2{font-size:25px}.calendar-day{min-height:66px;padding:5px 3px}.calendar-grid{gap:3px;padding:5px}.calendar-dot{font-size:8px;padding:3px}.calendar-weekday{font-size:9px}.calendar-month strong{font-size:18px;min-width:135px}.calendar-event{grid-template-columns:50px 1fr}.calendar-admin-row{align-items:flex-start;flex-direction:column}}
+
 </style>
 </head>
 
@@ -201,6 +219,7 @@ main{padding:18px 14px 85px}
       <button data-page="home" class="active">⌂ Home</button>
       <button data-page="community">◎ Community</button>
       <button data-page="discover">⌖ Ontdek reizen</button>
+      <button data-page="calendar">▦ Avonturenkalender</button>
       <button data-page="adventurers">♧ Avonturiers</button>
       <button data-page="archive">▧ Reisarchief</button>
       <button data-page="myAdventures">⚑ Mijn avonturen</button>
@@ -220,7 +239,8 @@ main{padding:18px 14px 85px}
 <div id="mobile" class="mobile hidden">
   <button data-page="home">⌂<br>Home</button>
   <button data-page="community">◎<br>Community</button>
-  <button data-page="discover">⌖ Ontdek</button>
+  <button data-page="discover">⌖<br>Ontdek</button>
+  <button data-page="calendar">▦<br>Kalender</button>
   <button data-page="adventurers">♧<br>Avonturiers</button>
   <button data-page="archive">▧<br>Archief</button>
   <button data-page="myAdventures">⚑<br>Avonturen</button>
@@ -246,6 +266,9 @@ let sb = null;
 let session = null;
 let me = null;
 let page = 'home';
+let calendarMonthOffset = 0;
+let calendarFilter = 'alles';
+let editingCalendarEventId = null;
 let room = null;
 let chatCategory = 'regular';
 let directRoom = null;
@@ -511,6 +534,7 @@ async function render() {
       page === 'home' ? await home() :
       page === 'community' ? await community() :
       page === 'discover' ? await discover() :
+      page === 'calendar' ? await adventureCalendar() :
       page === 'adventurers' ? await adventurers() :
       page === 'archive' ? await tripArchive() :
       page === 'tripAlbum' ? await tripAlbum() :
@@ -2779,10 +2803,149 @@ async function saveCompassProfile(tripId, prefix) {
   if (error) throw error;
 }
 
+
+const CALENDAR_TYPES = {
+  micro_avontuur:['Micro-avontuur','♧',''], webinar:['Webinar','◉','webinar'],
+  infomoment:['Infomoment','◎','webinar'], training:['Training','⚑','training'],
+  community:['Community','♨','community'], overig:['Activiteit','✧','']
+};
+function calendarDate(date) {
+  if (!date) return 'Datum volgt';
+  const d = new Date(date + 'T12:00:00');
+  return d.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'});
+}
+function calendarDateShort(date) {
+  if (!date) return {day:'–',month:'—'};
+  const d = new Date(date + 'T12:00:00');
+  return {day:d.getDate(),month:d.toLocaleDateString('nl-BE',{month:'short'})};
+}
+function calendarTypeLabel(type) { return (CALENDAR_TYPES[type] || CALENDAR_TYPES.overig)[0]; }
+function calendarTypeClass(type) {
+  if (type === 'webinar' || type === 'infomoment') return 'webinar';
+  if (type === 'training') return 'training';
+  if (type === 'community') return 'community';
+  return '';
+}
+function calendarMonthTitle(date) { return date.toLocaleDateString('nl-BE',{month:'long',year:'numeric'}); }
+function calendarFilterButtons() {
+  const options=[['alles','Alles'],['trip','Reizen'],['micro_avontuur','Micro-avonturen'],['webinar','Webinars'],['infomoment','Infomomenten'],['training','Trainingen'],['community','Community']];
+  return `<div class="calendar-filters">${options.map(([v,l])=>`<button class="${calendarFilter===v?'active':''}" onclick="setCalendarFilter('${v}')">${l}</button>`).join('')}</div>`;
+}
+async function calendarData() {
+  const [tripResult,eventResult] = await Promise.all([
+    sb.from('trips').select('id,title,destination,start_date,end_date,description,image_url,status').in('status',['published','completed']).not('start_date','is',null),
+    sb.from('adventure_calendar_events').select('*').eq('status','published').order('start_date',{ascending:true})
+  ]);
+  if (tripResult.error) throw tripResult.error;
+  if (eventResult.error) throw eventResult.error;
+  const trips=(tripResult.data||[]).map(t=>({...t,calendar_id:'trip-'+t.id,calendar_kind:'trip',event_type:'trip',label:'Reis',location:t.destination||'',signup_url:'',time:''}));
+  const events=(eventResult.data||[]).map(e=>({...e,calendar_id:'event-'+e.id,calendar_kind:'event',label:calendarTypeLabel(e.event_type),time:e.start_time||''}));
+  return [...trips,...events].filter(x=>x.start_date).sort((a,b)=>a.start_date.localeCompare(b.start_date));
+}
+function calendarEventHtml(item) {
+  const d=calendarDateShort(item.start_date);
+  const range=item.end_date && item.end_date!==item.start_date ? `${calendarDate(item.start_date)} – ${calendarDate(item.end_date)}` : calendarDate(item.start_date);
+  const kind=item.calendar_kind==='trip'?'Reis':calendarTypeLabel(item.event_type);
+  const typeClass=item.calendar_kind==='trip'?'trip':calendarTypeClass(item.event_type);
+  const when=item.time ? ` · ${String(item.time).slice(0,5)}` : '';
+  const location=item.location ? ` · ${esc(item.location)}` : '';
+  return `<article class="calendar-event" id="calendar-event-${item.calendar_id}">
+    <div class="calendar-datebox"><b>${d.day}</b><small>${esc(d.month)}</small></div>
+    <div><div class="calendar-type">${esc(kind)}</div><h3>${esc(item.title)}</h3>
+      <p class="muted">${range}${when}${location}</p>
+      ${item.description?`<p class="muted">${esc(item.description).slice(0,230)}${item.description.length>230?'…':''}</p>`:''}
+      ${item.calendar_kind==='trip'?`<button class="btn light" onclick="openTripDiscussion('${item.id}')">Bekijk reisgesprek</button>`:item.signup_url?`<a class="btn light" href="${esc(item.signup_url)}" target="_blank" rel="noopener">Meer informatie / inschrijven ↗</a>`:''}
+    </div>
+  </article>`;
+}
+async function adventureCalendar() {
+  const items=await calendarData();
+  const filtered=items.filter(x=>calendarFilter==='alles'||(calendarFilter==='trip'?x.calendar_kind==='trip':x.calendar_kind==='event'&&x.event_type===calendarFilter));
+  const today=localDateISO();
+  const base=new Date(); base.setDate(1); base.setMonth(base.getMonth()+calendarMonthOffset);
+  const year=base.getFullYear(), month=base.getMonth();
+  const firstDay=(new Date(year,month,1).getDay()+6)%7;
+  const start=new Date(year,month,1-firstDay);
+  const cells=[];
+  for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);cells.push(d);}
+  const byDay={};
+  filtered.forEach(item=>{
+    const from=new Date(item.start_date+'T12:00:00');
+    const to=new Date((item.end_date && item.end_date>=item.start_date ? item.end_date : item.start_date)+'T12:00:00');
+    for(let cursor=new Date(from);cursor<=to;cursor.setDate(cursor.getDate()+1)){
+      const iso=`${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,'0')}-${String(cursor.getDate()).padStart(2,'0')}`;
+      (byDay[iso] ||= []).push(item);
+    }
+  });
+  const days=cells.map(d=>{
+    const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const dayItems=byDay[iso]||[];
+    return `<div class="calendar-day ${d.getMonth()!==month?'outside':''} ${iso===today?'today':''}"><div class="calendar-day-number">${d.getDate()}</div>${dayItems.slice(0,2).map(item=>`<button class="calendar-dot ${item.calendar_kind==='trip'?'trip':calendarTypeClass(item.event_type)}" title="${esc(item.title)}" onclick="calendarJumpToEvent('${item.calendar_id}')">${item.calendar_kind==='trip'?'↗ ':''}${esc(item.title)}</button>`).join('')}${dayItems.length>2?`<div class="muted" style="font-size:9px">+${dayItems.length-2} meer</div>`:''}</div>`;
+  }).join('');
+  const monthItems=filtered.filter(x=>x.start_date.slice(0,7)===`${year}-${String(month+1).padStart(2,'0')}`);
+  const upcoming=filtered.filter(x=>x.start_date>=today).slice(0,30);
+  return `<div class="calendar-hero"><div class="eyebrow">JOUW VOLGENDE AVONTUUR BEGINT HIER</div><h2>De Avonturenkalender</h2><p>Van meerdaagse expedities tot een gezellige webinar, van een micro-avontuur dichtbij huis tot een voorbereidingsweekend. Alles op één plek.</p></div>
+    <div class="calendar-toolbar"><div class="calendar-month"><button class="calendar-arrow" onclick="changeCalendarMonth(-1)" aria-label="Vorige maand">‹</button><strong>${esc(calendarMonthTitle(base))}</strong><button class="calendar-arrow" onclick="changeCalendarMonth(1)" aria-label="Volgende maand">›</button></div><button class="btn light" onclick="resetCalendarMonth()">Vandaag</button></div>
+    ${calendarFilterButtons()}
+    <div class="calendar-grid"><div class="calendar-weekday">MA</div><div class="calendar-weekday">DI</div><div class="calendar-weekday">WO</div><div class="calendar-weekday">DO</div><div class="calendar-weekday">VR</div><div class="calendar-weekday">ZA</div><div class="calendar-weekday">ZO</div>${days}</div>
+    <div class="calendar-legend"><span><i style="background:#8ba27d"></i> Activiteit</span><span><i style="background:#91aebe"></i> Reis</span><span><i style="background:#d8bd7b"></i> Webinar / infomoment</span><span><i style="background:#b49a83"></i> Training</span></div>
+    <div class="calendar-agenda"><div class="row"><div><div class="eyebrow">OP DE PLANNING</div><h2 style="font:23px Georgia;margin:5px 0">${esc(calendarMonthTitle(base))}</h2></div><span class="tag">${monthItems.length} ${monthItems.length===1?'activiteit':'activiteiten'}</span></div>
+      ${monthItems.length?monthItems.map(calendarEventHtml).join(''):'<div class="card"><p class="muted">Er staan deze maand nog geen activiteiten gepland. Bekijk een andere maand of pas je filters aan.</p></div>'}</div>
+    <div class="calendar-agenda"><div class="eyebrow">BINNENKORT OP AVONTUUR</div><h2 style="font:23px Georgia;margin:5px 0">Komende activiteiten</h2>${upcoming.length?upcoming.map(calendarEventHtml).join(''):'<p class="muted">Er zijn momenteel geen komende activiteiten gepubliceerd.</p>'}</div>`;
+}
+function setCalendarFilter(value){calendarFilter=value;render();}
+function changeCalendarMonth(delta){calendarMonthOffset+=delta;render();}
+function resetCalendarMonth(){calendarMonthOffset=0;render();}
+function calendarJumpToEvent(id){const el=document.getElementById('calendar-event-'+id);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});else alert('Bekijk de activiteit in het agendaoverzicht onder de kalender.');}
+
+function calendarAdminForm(event={}) {
+  const editing=Boolean(event.id);
+  return `<div class="calendar-admin-form" id="calendarEditor"><h3>${editing?'Activiteit bewerken':'Nieuwe activiteit toevoegen'}</h3>
+    <div class="field"><label for="calTitle">Naam activiteit *</label><input id="calTitle" maxlength="140" value="${esc(event.title||'')}" placeholder="Bijv. Winterse mini-expeditie"></div>
+    <div class="grid"><div class="field"><label for="calType">Soort activiteit *</label><select id="calType">${Object.entries(CALENDAR_TYPES).map(([v,a])=>`<option value="${v}" ${event.event_type===v?'selected':''}>${a[0]}</option>`).join('')}</select></div><div class="field"><label for="calStatus">Zichtbaarheid</label><select id="calStatus"><option value="published" ${!event.status||event.status==='published'?'selected':''}>Gepubliceerd</option><option value="draft" ${event.status==='draft'?'selected':''}>Concept</option><option value="cancelled" ${event.status==='cancelled'?'selected':''}>Geannuleerd</option></select></div></div>
+    <div class="grid"><div class="field"><label for="calStart">Startdatum *</label><input id="calStart" type="date" value="${esc(event.start_date||'')}"></div><div class="field"><label for="calEnd">Einddatum</label><input id="calEnd" type="date" value="${esc(event.end_date||'')}"></div></div>
+    <div class="grid"><div class="field"><label for="calStartTime">Startuur</label><input id="calStartTime" type="time" value="${esc((event.start_time||'').slice(0,5))}"></div><div class="field"><label for="calEndTime">Einduur</label><input id="calEndTime" type="time" value="${esc((event.end_time||'').slice(0,5))}"></div></div>
+    <div class="field"><label for="calLocation">Locatie</label><input id="calLocation" value="${esc(event.location||'')}" placeholder="Bijv. Ardennen / Online"></div>
+    <div class="field"><label for="calDescription">Beschrijving</label><textarea id="calDescription" placeholder="Wat staat er op het programma?">${esc(event.description||'')}</textarea></div>
+    <div class="field"><label for="calSignup">Link voor meer informatie of inschrijving</label><input id="calSignup" type="url" value="${esc(event.signup_url||'')}" placeholder="https://..."></div>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn" onclick="saveCalendarEvent('${event.id||''}')">${editing?'Wijzigingen opslaan':'Activiteit toevoegen'}</button>${editing?`<button class="btn light" onclick="cancelCalendarEdit()">Annuleren</button>`:''}</div>
+  </div>`;
+}
+async function editCalendarEvent(id){editingCalendarEventId=id;await render();$('calendarEditor')?.scrollIntoView({behavior:'smooth',block:'start'});}
+async function cancelCalendarEdit(){editingCalendarEventId=null;await render();}
+async function saveCalendarEvent(id){
+  if(me?.role!=='admin')return alert('Alleen beheerders kunnen activiteiten beheren.');
+  const title=$('calTitle').value.trim(), start=$('calStart').value, end=$('calEnd').value;
+  if(!title||!start)return alert('Vul minstens een naam en startdatum in.');
+  if(end&&end<start)return alert('De einddatum kan niet vóór de startdatum liggen.');
+  const payload={title,event_type:$('calType').value,status:$('calStatus').value,start_date:start,end_date:end||null,start_time:$('calStartTime').value||null,end_time:$('calEndTime').value||null,location:$('calLocation').value.trim()||null,description:$('calDescription').value.trim()||null,signup_url:$('calSignup').value.trim()||null,updated_at:new Date().toISOString()};
+  try{
+    let result;
+    if(id)result=await sb.from('adventure_calendar_events').update(payload).eq('id',id);
+    else result=await sb.from('adventure_calendar_events').insert({...payload,created_by:me.id});
+    if(result.error)throw result.error;
+    editingCalendarEventId=null;alert(id?'Activiteit bijgewerkt.':'Activiteit toegevoegd aan de kalender.');await render();
+  }catch(error){alert('Opslaan mislukt: '+(error.message||error));}
+}
+async function deleteCalendarEvent(id){
+  if(me?.role!=='admin')return alert('Alleen beheerders kunnen activiteiten verwijderen.');
+  if(!confirm('Deze activiteit definitief verwijderen uit de kalender?'))return;
+  const {error}=await sb.from('adventure_calendar_events').delete().eq('id',id);
+  if(error)return alert('Verwijderen mislukt: '+error.message);
+  await render();
+}
+async function adminCalendar(){
+  if(me?.role!=='admin')return '<div class="notice">Alleen beheerders kunnen kalenderactiviteiten beheren. Je kunt de gepubliceerde kalender wel bekijken via Avonturenkalender.</div>';
+  const {data,error}=await sb.from('adventure_calendar_events').select('*').order('start_date',{ascending:true});
+  if(error)throw error;
+  const editing=(data||[]).find(x=>x.id===editingCalendarEventId);
+  return `<div class="card"><div class="eyebrow">KALENDERBEHEER</div><h3>Activiteiten toevoegen</h3><p class="muted">Gepubliceerde reizen verschijnen automatisch. Voeg hier micro-avonturen, webinars, trainingen en andere activiteiten toe.</p></div>${calendarAdminForm(editing||{})}<h3 style="font:20px Georgia;margin-top:22px">Zelf aangemaakte activiteiten</h3><div class="calendar-admin-list">${(data||[]).length?(data||[]).map(e=>`<div class="calendar-admin-row"><div><b>${esc(e.title)}</b><div class="muted">${calendarDate(e.start_date)}${e.end_date&&e.end_date!==e.start_date?' – '+calendarDate(e.end_date):''} · ${esc(calendarTypeLabel(e.event_type))} · ${e.status==='published'?'Gepubliceerd':e.status==='draft'?'Concept':'Geannuleerd'}</div></div><div class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn light" onclick="editCalendarEvent('${e.id}')">Bewerken</button><button class="btn light" onclick="deleteCalendarEvent('${e.id}')">Verwijderen</button></div></div>`).join(''):'<p class="muted">Je hebt nog geen aparte activiteiten toegevoegd.</p>'}</div>`;
+}
+
 function adminMenu(active) {
   const items = [
     ['overview','▦','Overzicht'],['activity','◷','Activiteit'],['members','♙','Leden'],['trips','⌖','Reizen'],
-    ['community','◎','Community'],['chatgroups','☏','Chatgroepen'],['admins','⚙','Beheerders']
+    ['calendar','▦','Kalender'],['community','◎','Community'],['chatgroups','☏','Chatgroepen'],['admins','⚙','Beheerders']
   ];
   return `<div class="row" style="gap:7px;flex-wrap:wrap;margin:16px 0 20px">
     ${items.map(([key,icon,label]) => `<button class="btn ${active===key?'':'light'}" onclick="setAdminSection('${key}')">${icon} ${label}</button>`).join('')}
@@ -2798,6 +2961,8 @@ async function setAdminSection(next) {
 async function admin() {
   if (!['admin','moderator'].includes(me.role)) return 'Geen toegang.';
   const header = section('TEAM BASECAMP','Beheer','Een centraal overzicht van leden, reizen en community.') + adminMenu(adminSection);
+
+  if (adminSection === 'calendar') return header + await adminCalendar();
 
   if (adminSection === 'overview') {
     const [members,pending,trips,past] = await Promise.all([
