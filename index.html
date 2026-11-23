@@ -901,7 +901,7 @@ async function addPost() {
 
 async function home() {
   const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination,description,start_date,end_date,status,image_url,booking_status')
+    .select('id,title,destination,description,start_date,end_date,status,image_url,booking_status,website_url')
     .eq('status','published')
     .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date')
@@ -1005,6 +1005,7 @@ async function home() {
                 ${t.end_date ? ' – '+new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE') : ''}
               </p>
             ` : ''}
+            ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
           </div>
         `).join('') || `
           <div class="card">
@@ -1318,7 +1319,7 @@ async function showCompassResults() {
   if (button) { button.disabled = true; button.textContent = 'Je kompas wordt berekend…'; }
   try {
     const [{data:trips,error:tripError},{data:profiles,error:profileError},{data:myInterestRows,error:myInterestError}] = await Promise.all([
-      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url').eq('status','published').order('start_date'),
+      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url,website_url').eq('status','published').order('start_date'),
       sb.from('adventure_compass_profiles').select('*'),
       sb.from('trip_interests').select('trip_id').eq('user_id',me.id)
     ]);
@@ -1342,6 +1343,7 @@ async function showCompassResults() {
         <p class="muted">${esc(t.description||'')}</p>
         <div class="notice">${esc(experienceNote)}</div>
         ${p.required_skills?.length?`<p class="muted"><b>Vaardigheden:</b> ${p.required_skills.map(x=>esc((COMPASS_OPTIONS.required_skills.find(o=>o[0]===x)||[x,x])[1])).join(', ')}</p>`:''}
+        ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
         <button class="btn ${myInterestSet.has(t.id)?'light':''}" onclick="toggleTripInterest('${t.id}',${myInterestSet.has(t.id)})">${myInterestSet.has(t.id)?'✓ Je hebt interesse getoond':'Ik heb interesse'}</button>
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
       </div>`;
@@ -1364,6 +1366,27 @@ function tripBookingStatusTag(status) {
   const label = tripBookingStatusLabel(status);
   return `<span class="tag">${esc(label)}</span>`;
 }
+function normalizeTripWebsiteUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let parsed;
+  try { parsed = new URL(raw); } catch (_) { throw new Error('Vul een volledige website-link in, inclusief https://.'); }
+  if (!['http:','https:'].includes(parsed.protocol)) throw new Error('Gebruik een website-link die begint met https:// of http://.');
+  return parsed.href;
+}
+
+async function saveTripWebsiteUrl(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const input = $('trip-website-' + tripId);
+  let websiteUrl;
+  try { websiteUrl = normalizeTripWebsiteUrl(input?.value || ''); }
+  catch (error) { return alert(error.message || error); }
+  const {error} = await sb.from('trips').update({website_url:websiteUrl}).eq('id',tripId);
+  if (error) return alert('Website-link opslaan mislukt: ' + error.message);
+  alert(websiteUrl ? 'Website-link opgeslagen.' : 'Website-link verwijderd.');
+  await render();
+}
+
 async function updateTripBookingStatus(tripId, status) {
   if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
   const allowed = ['open','almost_full','full','waitlist','closed'];
@@ -1377,7 +1400,7 @@ function discoverTabs(active) { return `<div class="tabs" style="display:flex;ga
 
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
-   .select('id,title,destination,description,start_date,end_date,status,image_url')
+   .select('id,title,destination,description,start_date,end_date,status,image_url,website_url,booking_status')
     .eq('status','published')
     .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date');
@@ -1408,6 +1431,7 @@ async function discover() {
         <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag">${esc(t.destination || 'Avontuur')}</span>${tripBookingStatusTag(t.booking_status)}</div><h3>${esc(t.title)}</h3>
         <b>${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}</b>
         <p class="muted">${esc(t.description || '')}</p>
+        ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
         <button class="btn ${interested ? 'light' : ''}" onclick="toggleTripInterest('${t.id}',${interested})">${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}</button>
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
         <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><b>Wie gaat er mee?</b>
@@ -3296,7 +3320,7 @@ async function admin() {
   }
 
   if (adminSection === 'trips') {
-    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date,booking_status').order('start_date',{ascending:false});
+    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date,booking_status,website_url').order('start_date',{ascending:false});
     if (error) throw error;
     const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id,created_at');
     if (interestError) throw interestError;
@@ -3336,6 +3360,7 @@ async function admin() {
       return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
       <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
       <div class="field" style="max-width:340px"><label>Reisstatus</label><select onchange="updateTripBookingStatus('${t.id}',this.value)"><option value="open" ${(t.booking_status||'open')==='open'?'selected':''}>Inschrijvingen open</option><option value="almost_full" ${t.booking_status==='almost_full'?'selected':''}>Bijna vol</option><option value="full" ${t.booking_status==='full'?'selected':''}>Volzet</option><option value="waitlist" ${t.booking_status==='waitlist'?'selected':''}>Wachtlijst</option><option value="closed" ${t.booking_status==='closed'?'selected':''}>Inschrijvingen gesloten</option></select></div>
+      <div class="field" style="max-width:560px"><label for="trip-website-${t.id}">Website-link voor meer informatie en boekingen</label><input id="trip-website-${t.id}" type="url" inputmode="url" maxlength="1000" value="${esc(t.website_url||'')}" placeholder="https://dagboekvaneenavonturier.com/..."/><button class="btn light" style="margin-top:7px" onclick="saveTripWebsiteUrl('${t.id}')">Website-link opslaan</button></div>
       ${people.length?`<div style="display:grid;gap:7px">${people.map(i=>`<div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap">${memberLink(i.user_id,names[i.user_id])}<button class="btn light" onclick="startDirectChat('${i.user_id}')">Stuur privébericht</button></div>`).join('')}</div>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
       <details style="margin:10px 0"><summary>Reisupdate versturen naar geïnteresseerden</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px"><p class="muted">De update wordt als melding verstuurd naar actieve geïnteresseerden die nog geen bevestigde deelnemer zijn.</p><label for="trip-update-title-${t.id}">Titel van de update</label><input id="trip-update-title-${t.id}" maxlength="100" placeholder="Bijv. Nieuwe vertrekdatum bekend"><label for="trip-update-message-${t.id}" style="margin-top:8px">Bericht</label><textarea id="trip-update-message-${t.id}" rows="4" maxlength="2000" placeholder="Vertel wat er nieuw is..."></textarea><button class="btn" style="margin-top:8px" onclick="sendTripUpdate('${t.id}')">Verstuur reisupdate</button></div></details>
       <details><summary>Deelnemers en patch beheren</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">${confirmed.map(x=>`<div class="row" style="padding:5px 0;justify-content:space-between">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen bevestigde deelnemers.</p>'}
@@ -3358,6 +3383,7 @@ async function admin() {
         <input id="ts" type="date">
         <input id="te" type="date" style="margin:8px 0">
         <textarea id="tx" placeholder="Omschrijving"></textarea>
+        <div class="field" style="margin-top:8px"><label for="tripWebsiteUrl">Website-link voor meer informatie en boekingen (optioneel)</label><input id="tripWebsiteUrl" type="url" inputmode="url" maxlength="1000" placeholder="https://dagboekvaneenavonturier.com/..."/></div>
         <input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
         ${me.role==='admin' ? `<details style="margin-top:12px"><summary>Avonturenkompas-parameters voor deze reis instellen</summary><div style="margin-top:10px">${compassProfileForm('compass-new',{})}</div></details>` : ''}
         <button class="btn light" onclick="addTrip('draft')">Opslaan als concept</button>
@@ -3487,6 +3513,10 @@ async function addTrip(status = 'published') {
   const title = $('tn').value.trim();
   if (!title) return alert('Vul een reisnaam in.');
 
+  let websiteUrl;
+  try { websiteUrl = normalizeTripWebsiteUrl($('tripWebsiteUrl')?.value || ''); }
+  catch (error) { return alert(error.message || error); }
+
   const imageFile = $('tripImage').files[0];
   let imageUrl = null;
 
@@ -3522,6 +3552,7 @@ async function addTrip(status = 'published') {
     start_date:$('ts').value || null,
     end_date:$('te').value || null,
     image_url:imageUrl,
+    website_url:websiteUrl,
     status:status === 'draft' ? 'draft' : 'published'
   }).select('id').single();
 
