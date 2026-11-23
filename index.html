@@ -597,7 +597,7 @@ async function render() {
   }
 }
 async function unreadNotificationsCount() {
-  const [tripResult, postResult, chatResult] = await Promise.all([
+  const [tripResult, postResult, chatResult, tripUpdateResult] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
@@ -611,16 +611,23 @@ async function unreadNotificationsCount() {
     sb.from('chat_message_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
+      .is('read_at', null),
+
+    sb.from('trip_update_notifications')
+      .select('id', {count:'exact', head:true})
+      .eq('recipient_id', me.id)
       .is('read_at', null)
   ]);
 
   if (tripResult.error) throw tripResult.error;
   if (postResult.error) throw postResult.error;
   if (chatResult.error) throw chatResult.error;
+  if (tripUpdateResult.error) throw tripUpdateResult.error;
 
   return (tripResult.count || 0) +
     (postResult.count || 0) +
-    (chatResult.count || 0);
+    (chatResult.count || 0) +
+    (tripUpdateResult.count || 0);
 }
 
 
@@ -894,7 +901,7 @@ async function addPost() {
 
 async function home() {
   const {data:trips,error:tripError} = await sb.from('trips')
-    .select('id,title,destination,description,start_date,end_date,status,image_url')
+    .select('id,title,destination,description,start_date,end_date,status,image_url,booking_status')
     .eq('status','published')
     .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date')
@@ -1350,6 +1357,22 @@ async function showCompassResults() {
 
 function restartCompass() { discoverMode='compass'; render().catch(e=>alert(e.message||e)); }
 function setDiscoverMode(mode) { discoverMode=mode; render().catch(e=>alert(e.message||e)); }
+function tripBookingStatusLabel(status) {
+  return ({open:'Inschrijvingen open',almost_full:'Bijna vol',full:'Volzet',waitlist:'Wachtlijst',closed:'Inschrijvingen gesloten'})[status] || 'Inschrijvingen open';
+}
+function tripBookingStatusTag(status) {
+  const label = tripBookingStatusLabel(status);
+  return `<span class="tag">${esc(label)}</span>`;
+}
+async function updateTripBookingStatus(tripId, status) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const allowed = ['open','almost_full','full','waitlist','closed'];
+  if (!allowed.includes(status)) return alert('Ongeldige reisstatus.');
+  const {error} = await sb.from('trips').update({booking_status:status}).eq('id',tripId);
+  if (error) return alert('Reisstatus aanpassen mislukt: ' + error.message);
+  await render();
+}
+
 function discoverTabs(active) { return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='trips'?'active':''}" onclick="setDiscoverMode('trips')">⌖ Alle reizen</button><button type="button" class="${active==='compass'?'active':''}" onclick="setDiscoverMode('compass')">Avonturenkompas</button><button type="button" class="${active==='archive'?'active':''}" onclick="setDiscoverMode('archive')">▧ Reisarchief</button></div>`; }
 
 async function discover() {
@@ -1382,7 +1405,7 @@ async function discover() {
       const interested = myInterests.has(t.id);
       return `<div class="card">
         ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:190px;object-fit:cover;border-radius:10px;margin-bottom:12px">` : ''}
-        <span class="tag">${esc(t.destination || 'Avontuur')}</span><h3>${esc(t.title)}</h3>
+        <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag">${esc(t.destination || 'Avontuur')}</span>${tripBookingStatusTag(t.booking_status)}</div><h3>${esc(t.title)}</h3>
         <b>${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}</b>
         <p class="muted">${esc(t.description || '')}</p>
         <button class="btn ${interested ? 'light' : ''}" onclick="toggleTripInterest('${t.id}',${interested})">${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}</button>
@@ -1731,7 +1754,8 @@ async function notifications() {
   const [
     {data: tripItems, error: tripError},
     {data: postItems, error: postError},
-    {data: chatItems, error: chatError}
+    {data: chatItems, error: chatError},
+    {data: tripUpdateItems, error: tripUpdateError}
   ] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id,trip_id,discussion_id,created_at,read_at')
@@ -1749,18 +1773,26 @@ async function notifications() {
       .select('id,group_id,message_id,created_at,read_at')
       .eq('recipient_id', me.id)
       .is('read_at', null)
+      .order('created_at', {ascending: false}),
+
+    sb.from('trip_update_notifications')
+      .select('id,trip_id,title,message,created_at,read_at')
+      .eq('recipient_id', me.id)
+      .is('read_at', null)
       .order('created_at', {ascending: false})
   ]);
 
   if (tripError) throw tripError;
   if (postError) throw postError;
   if (chatError) throw chatError;
+  if (tripUpdateError) throw tripUpdateError;
 
   const trips = tripItems || [];
   const posts = postItems || [];
   const chats = chatItems || [];
+  const tripUpdates = tripUpdateItems || [];
 
-  if (trips.length === 0 && posts.length === 0 && chats.length === 0) {
+  if (trips.length === 0 && posts.length === 0 && chats.length === 0 && tripUpdates.length === 0) {
     return section(
       'BASECAMP',
       'Meldingen',
@@ -1946,11 +1978,26 @@ async function notifications() {
     `;
   }
 
+  let tripUpdateHtml = '';
+  if (tripUpdates.length) {
+    const tripIds = [...new Set(tripUpdates.map(n => n.trip_id))];
+    const {data: tripData, error: tripDataError} = await sb.from('trips').select('id,title').in('id',tripIds);
+    if (tripDataError) throw tripDataError;
+    const tripMap = Object.fromEntries((tripData||[]).map(t=>[t.id,t]));
+    tripUpdateHtml = `<div class="card"><h3>Updates van Dagboek van een Avonturier</h3>${tripUpdates.map(n=>`<article style="border-bottom:1px solid var(--line);padding:12px 0"><div class="feedtop"><b>${esc(n.title)}</b><span class="badge">Nieuwe reisupdate</span></div><p class="muted">${esc(tripMap[n.trip_id]?.title || 'Reisupdate')} · ${new Date(n.created_at).toLocaleDateString('nl-BE')}</p><p style="white-space:pre-wrap">${esc(n.message)}</p><button class="btn light" onclick="markTripUpdateRead('${n.id}')">Markeer als gelezen</button></article>`).join('')}</div>`;
+  }
+
   return section(
     'BASECAMP',
     'Meldingen',
-    'Blijf op de hoogte van reisgesprekken, communityreacties en chatberichten.'
-  ) + tripHtml + postHtml + chatHtml;
+    'Blijf op de hoogte van reisupdates, reisgesprekken, communityreacties en chatberichten.'
+  ) + tripUpdateHtml + tripHtml + postHtml + chatHtml;
+}
+
+async function markTripUpdateRead(notificationId) {
+  const {error} = await sb.from('trip_update_notifications').update({read_at:new Date().toISOString()}).eq('id',notificationId).eq('recipient_id',me.id);
+  if (error) return alert('Melding bijwerken mislukt: ' + error.message);
+  await render();
 }
 
 async function openTripNotification(notificationId, tripId) {
@@ -3249,7 +3296,7 @@ async function admin() {
   }
 
   if (adminSection === 'trips') {
-    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date').order('start_date',{ascending:false});
+    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date,booking_status').order('start_date',{ascending:false});
     if (error) throw error;
     const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id,created_at');
     if (interestError) throw interestError;
@@ -3276,7 +3323,7 @@ async function admin() {
     const upcoming = (trips||[]).filter(t=>t.status==='published' && (!t.end_date || t.end_date>=today));
     const past = (trips||[]).filter(t=>t.status==='completed' || (t.status==='published' && t.end_date && t.end_date<today));
     const renderTrip = t => {
-      const people=(interests||[]).filter(i=>i.trip_id===t.id);
+      const people=(interests||[]).filter(i=>i.trip_id===t.id && names[i.user_id]?.status==='approved');
       const confirmed=(participants||[]).filter(x=>x.trip_id===t.id);
       const profile=compassProfiles[t.id] || {};
       const compassEditor = me.role==='admin'
@@ -3288,7 +3335,9 @@ async function admin() {
         : `<p class="muted" style="font-size:12px">Avonturenkompas-parameters kunnen door een beheerder worden ingesteld.</p>`;
       return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
       <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
-      ${people.length?`<p>${people.map(i=>memberLink(i.user_id,names[i.user_id])).join('')}</p>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+      <div class="field" style="max-width:340px"><label>Reisstatus</label><select onchange="updateTripBookingStatus('${t.id}',this.value)"><option value="open" ${(t.booking_status||'open')==='open'?'selected':''}>Inschrijvingen open</option><option value="almost_full" ${t.booking_status==='almost_full'?'selected':''}>Bijna vol</option><option value="full" ${t.booking_status==='full'?'selected':''}>Volzet</option><option value="waitlist" ${t.booking_status==='waitlist'?'selected':''}>Wachtlijst</option><option value="closed" ${t.booking_status==='closed'?'selected':''}>Inschrijvingen gesloten</option></select></div>
+      ${people.length?`<div style="display:grid;gap:7px">${people.map(i=>`<div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap">${memberLink(i.user_id,names[i.user_id])}<button class="btn light" onclick="startDirectChat('${i.user_id}')">Stuur privébericht</button></div>`).join('')}</div>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
+      <details style="margin:10px 0"><summary>Reisupdate versturen naar geïnteresseerden</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px"><p class="muted">De update wordt als melding verstuurd naar actieve geïnteresseerden die nog geen bevestigde deelnemer zijn.</p><label for="trip-update-title-${t.id}">Titel van de update</label><input id="trip-update-title-${t.id}" maxlength="100" placeholder="Bijv. Nieuwe vertrekdatum bekend"><label for="trip-update-message-${t.id}" style="margin-top:8px">Bericht</label><textarea id="trip-update-message-${t.id}" rows="4" maxlength="2000" placeholder="Vertel wat er nieuw is..."></textarea><button class="btn" style="margin-top:8px" onclick="sendTripUpdate('${t.id}')">Verstuur reisupdate</button></div></details>
       <details><summary>Deelnemers en patch beheren</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">${confirmed.map(x=>`<div class="row" style="padding:5px 0;justify-content:space-between">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen bevestigde deelnemers.</p>'}
       <div class="field"><label>Deelnemer bevestigen</label><select id="participant-${t.id}"><option value="">Kies een lid...</option>${memberOptions}</select></div><button class="btn" onclick="confirmTripParticipant('${t.id}')">Deelname bevestigen</button>
       <div class="field" style="margin-top:12px"><label>Patchafbeelding</label>${t.patch_image_url?`<img src="${esc(t.patch_image_url)}" alt="Huidige patch" style="width:100px;height:100px;object-fit:contain">`:''}<input id="patch-${t.id}" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn light" onclick="uploadTripPatch('${t.id}')">Patch uploaden</button></div></div></details>
@@ -3403,6 +3452,34 @@ async function saveExistingCompassProfile(tripId) {
     await render();
   } catch (error) {
     alert('Parameters opslaan mislukt: ' + (error.message || error));
+  }
+}
+
+async function sendTripUpdate(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const title = ($('trip-update-title-' + tripId)?.value || '').trim();
+  const message = ($('trip-update-message-' + tripId)?.value || '').trim();
+  if (!title || !message) return alert('Vul zowel een titel als een bericht in.');
+  try {
+    const [{data:interestRows,error:interestError},{data:participantRows,error:participantError}] = await Promise.all([
+      sb.from('trip_interests').select('user_id').eq('trip_id',tripId),
+      sb.from('trip_participants').select('user_id').eq('trip_id',tripId)
+    ]);
+    if (interestError) throw interestError;
+    if (participantError) throw participantError;
+    const participantIds = new Set((participantRows||[]).map(x=>x.user_id));
+    const candidates = [...new Set((interestRows||[]).map(x=>x.user_id).filter(id=>id && id!==me.id && !participantIds.has(id)))];
+    const people = await profilesFor(candidates);
+    const recipients = candidates.filter(id=>people[id]?.status==='approved');
+    if (!recipients.length) return alert('Er zijn geen actieve geïnteresseerden die deze update nog moeten ontvangen.');
+    if (!confirm(`Deze reisupdate wordt verstuurd als melding naar ${recipients.length} geïnteresseerde${recipients.length===1?'':'n'}. Doorgaan?`)) return;
+    const rows = recipients.map(recipient_id=>({trip_id:tripId,recipient_id,title,message,created_by:me.id}));
+    const {error:insertError} = await sb.from('trip_update_notifications').insert(rows);
+    if (insertError) throw insertError;
+    alert(`Reisupdate verstuurd naar ${recipients.length} geïnteresseerde${recipients.length===1?'':'n'}.`);
+    await render();
+  } catch (error) {
+    alert('Reisupdate versturen mislukt: ' + (error.message || error));
   }
 }
 
