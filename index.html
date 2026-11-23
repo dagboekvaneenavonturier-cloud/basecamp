@@ -3016,7 +3016,8 @@ async function setAdminSection(next) {
 
 function travelInfoAdminForm(tripId,info,guides,memberOptions) {
   const field=(key,label,placeholder='')=>`<div class="field"><label>${label}</label><textarea id="travel-${key}-${tripId}" rows="4" placeholder="${placeholder}">${esc(info[key]||'')}</textarea></div>`;
-  const assigned = new Set((guides||[]).map(g=>g.guide_user_id));
+  const assigned = (guides||[]).map(g=>g.guide_user_id);
+  const guideOptions = selectedId => `<option value="">Geen gids toegewezen</option>${(memberOptions||'').replace(/<option value="([^"]+)">([^<]*)<\/option>/g,(all,id,name)=>`<option value="${id}" ${selectedId===id?'selected':''}>${name}</option>`)}`;
   return `<div class="card" style="background:#f7f6f1">
     <p class="muted">Deze informatie wordt zichtbaar in de persoonlijke reisomgeving van bevestigde deelnemers. Gebruik regeleindes voor dagprogramma's en opsommingen.</p>
     ${field('flight_info','Vluchturen begeleiding','Vluchtnummer, vertrek- en aankomsturen...')}
@@ -3029,11 +3030,8 @@ function travelInfoAdminForm(tripId,info,guides,memberOptions) {
     ${field('preparation','Voorbereidingstraject','Trainingsweekends, bijeenkomsten en deadlines...')}
     ${field('preparation_tips','Tips voor je voorbereiding')}
     ${field('important_notes','Belangrijke informatie')}
-    <div class="field"><label>Gidsen en begeleiders koppelen</label>
-      <select id="travel-guides-${tripId}" multiple size="5" style="min-height:120px">
-        ${(memberOptions||'').replace(/<option value="([^"]+)">([^<]*)<\/option>/g,(all,id,name)=>`<option value="${id}" ${assigned.has(id)?'selected':''}>${name}</option>`)}
-      </select><p class="muted">Houd Ctrl (computer) of gebruik de selectiemogelijkheden op je toestel om meerdere gidsen te kiezen.</p>
-    </div>
+    <div class="field"><label>Gids 1 (optioneel)</label><select id="travel-guide-1-${tripId}">${guideOptions(assigned[0]||'')}</select></div>
+    <div class="field"><label>Gids 2 (optioneel)</label><select id="travel-guide-2-${tripId}">${guideOptions(assigned[1]||'')}</select><p class="muted">Wijs één of twee gidsen toe. De tweede gids is optioneel.</p></div>
     <button class="btn" onclick="saveTravelInfo('${tripId}')">Reisinformatie opslaan</button>
   </div>`;
 }
@@ -3046,8 +3044,7 @@ async function saveTravelInfo(tripId) {
   try {
     const {error}=await sb.from('trip_travel_info').upsert(payload,{onConflict:'trip_id'});
     if(error)throw error;
-    const select=$('travel-guides-'+tripId);
-    const selected=[...select.selectedOptions].map(o=>o.value);
+    const selected=[$('travel-guide-1-'+tripId)?.value,$('travel-guide-2-'+tripId)?.value].filter((value,index,array)=>value && array.indexOf(value)===index);
     const {error:deleteError}=await sb.from('trip_guides').delete().eq('trip_id',tripId);
     if(deleteError)throw deleteError;
     if(selected.length){
