@@ -133,6 +133,34 @@ main{padding:18px 14px 85px}
 .calendar-admin-form{background:#f4f2e9;border:1px solid #e3dfd2;border-radius:14px;padding:16px;margin:14px 0}.calendar-admin-form h3{font:19px Georgia;margin:0 0 10px}.calendar-admin-list{display:grid;gap:8px}.calendar-admin-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px}.calendar-admin-row .muted{margin:3px 0 0}
 @media(max-width:680px){.calendar-hero{padding:22px 18px}.calendar-hero h2{font-size:25px}.calendar-day{min-height:66px;padding:5px 3px}.calendar-grid{gap:3px;padding:5px}.calendar-dot{font-size:8px;padding:3px}.calendar-weekday{font-size:9px}.calendar-month strong{font-size:18px;min-width:135px}.calendar-event{grid-template-columns:50px 1fr}.calendar-admin-row{align-items:flex-start;flex-direction:column}}
 
+
+
+/* MOBIELE AFWERKING */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+main,.card,.post,.chat,.chatmain,.calendar-event,.calendar-admin-row{min-width:0}
+button,a,input,textarea,select{-webkit-tap-highlight-color:transparent}
+button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
+@media(max-width:680px){
+  .top{padding:14px 16px;gap:10px;align-items:center}
+  .brand{font-size:17px;letter-spacing:2px;white-space:nowrap}
+  .brand small{font-size:8px;letter-spacing:1px}
+  #userLabel{font-size:12px;text-align:right;max-width:42%;overflow-wrap:anywhere}
+  main{padding:18px 14px calc(105px + env(safe-area-inset-bottom))}
+  .mobile{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:20;justify-content:flex-start;gap:2px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding:6px 7px calc(6px + env(safe-area-inset-bottom));padding-bottom:calc(6px + env(safe-area-inset-bottom));background:rgba(255,255,255,.98);border-top:1px solid var(--line)}
+  .mobile button{flex:0 0 auto;min-width:58px;min-height:44px;padding:5px 7px;border:0;border-radius:8px;background:transparent;font-size:11px;line-height:1.25;color:#526056;white-space:nowrap}
+  .mobile button:active,.mobile button:focus-visible{background:#e2e8dd;color:var(--g);outline:none}
+  .btn{min-height:42px}
+  input,textarea,select{font-size:16px}
+  .row{flex-wrap:wrap}
+}
+@media(max-width:380px){
+  .brand{font-size:15px;letter-spacing:1.5px}
+  .brand small{font-size:7px}
+  main{padding-left:11px;padding-right:11px}
+  .chat{grid-template-columns:96px minmax(0,1fr)}
+  .calendar-month strong{min-width:115px;font-size:16px}
+}
+
 </style>
 </head>
 
@@ -243,6 +271,7 @@ main{padding:18px 14px 85px}
 </button>
 <button data-page="chat">☏ Chats</button>
   <button data-page="profile">◉<br>Profiel</button>
+  <button data-page="admin" id="adminNavMobile" class="hidden">⚙<br>Beheer</button>
 </div>
 
 <div class="footer">BASECAMP · DAGBOEK VAN EEN AVONTURIER</div>
@@ -534,6 +563,7 @@ async function refreshAuth() {
   $('mobile').classList.remove('hidden');
   $('userLabel').textContent = 'Welkom, ' + (me.display_name || 'avonturier');
   $('adminNav').classList.toggle('hidden', !['admin','moderator'].includes(me.role));
+  $('adminNavMobile').classList.toggle('hidden', !['admin','moderator'].includes(me.role));
 
   startNotificationRefresh();
   await go('home');
