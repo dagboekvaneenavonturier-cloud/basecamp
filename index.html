@@ -72,7 +72,7 @@ textarea{min-height:80px}
 .profile-identity{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}.profile-identity .avatar,.profile-member-link .avatar{width:30px;height:30px;font-size:12px;margin:0}.profile-member-link{display:inline-flex;align-items:center;gap:7px}
 .footer{text-align:center;padding:20px;color:#8b9489;font-size:10px}
 .status{padding:15px;border-radius:10px;background:#edf0e9;margin:12px 0}
-.bucket-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}.bucket-item:last-child{border-bottom:0}.bucket-actions{display:flex;gap:6px;flex-wrap:wrap}.bucket-actions button{font-size:12px;padding:7px 9px}.bucket-title{font-weight:750}.bucket-form{background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}.bucket-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.bucket-tabs button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 13px;cursor:pointer}.bucket-tabs button.active{background:var(--g);color:#fff}
+.bucket-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}.bucket-item:last-child{border-bottom:0}.bucket-actions{display:flex;gap:6px;flex-wrap:wrap}.bucket-actions button{font-size:12px;padding:7px 9px}.bucket-title{font-weight:750}.bucket-form{background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}.bucket-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.bucket-tabs button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 13px;cursor:pointer}.bucket-tabs button.active{background:var(--g);color:#fff}.bucket-editor{background:#f7f7f2;border:1px solid #dfe4d9;border-radius:10px;padding:12px;margin-top:10px}.bucket-public-setting{display:flex;gap:10px;align-items:flex-start;background:#f5f4ee;border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}.bucket-public-setting input{width:auto;margin-top:4px}.bucket-public-setting label{font-weight:600;font-size:13px}.bucket-trip-link{display:inline-block;margin-top:7px;font-size:12px}
 .error{background:#f8e5e1;color:#8a3025}
 .success{background:#e5efe2;color:#315c34}
 @media(max-width:680px){
@@ -223,6 +223,7 @@ let selectedTripId = null;
 let selectedArchiveTripId = null;
 let selectedProfileId = null;
 let bucketlistView = 'wishlist';
+let editingBucketItemId = null;
 let adminSection = 'overview';
 let adminMemberPage = 0;
 let adminMemberSearch = '';
@@ -406,7 +407,7 @@ async function refreshAuth() {
   }
 
   const {data:profile,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,role,status,left_at')
+    .select('id,display_name,bio,avatar_url,role,status,left_at,bucketlist_public')
     .eq('id',s.user.id)
     .maybeSingle();
 
@@ -2129,6 +2130,10 @@ async function profile() {
     </div>
     <div class="card" style="margin-top:18px">
       ${section('DROMEN & PLANNEN','Mijn avonturenbucketlist','Welke plekken wil je nog ontdekken? Verzamel hier je dromen en vink ze af zodra je ze beleefd hebt.')}
+      <div class="bucket-public-setting">
+        <input id="bucketlistPublic" type="checkbox" ${me.bucketlist_public ? 'checked' : ''}>
+        <div><label for="bucketlistPublic">Mijn bucketlist openbaar tonen op mijn profiel</label><div class="muted">Andere goedgekeurde BASECAMP-leden kunnen je droomavonturen en beleefde avonturen bekijken. Je kunt dit altijd weer privé zetten.</div></div>
+      </div>
       <div class="bucket-tabs">
         <button class="${bucketlistView==='wishlist'?'active':''}" onclick="setBucketlistView('wishlist')">♡ Mijn bucketlist (${(bucketItems||[]).filter(x=>!x.completed).length})</button>
         <button class="${bucketlistView==='completed'?'active':''}" onclick="setBucketlistView('completed')">✓ Beleefd (${(bucketItems||[]).filter(x=>x.completed).length})</button>
@@ -2147,7 +2152,7 @@ async function profile() {
       <div>
         ${bucketItems && bucketItems.filter(x=>x.completed===(bucketlistView==='completed')).length ? bucketItems.filter(x=>x.completed===(bucketlistView==='completed')).map(item=>bucketItemHtml(item,availableTrips||[])).join('') : `<p class="muted">${bucketlistView==='completed'?'Je hebt nog geen bucketlist-avonturen afgevinkt.':'Je bucketlist is nog leeg. Voeg hierboven je eerste droomavontuur toe!'}</p>`}
       </div>
-      <p class="muted" style="margin-top:12px;font-size:11px">Je bucketlist is privé en alleen zichtbaar voor jou.</p>
+      <p class="muted" style="margin-top:12px;font-size:11px">${me.bucketlist_public ? 'Je bucketlist is openbaar voor andere goedgekeurde BASECAMP-leden.' : 'Je bucketlist is privé en alleen zichtbaar voor jou.'} De instelling wordt bewaard met de knop ‘Profiel bewaren’ hierboven.</p>
     </div>
     <div class="card" style="margin-top:18px;border:1px solid #c98b72">
       <h3>BASECAMP verlaten</h3>
@@ -2159,19 +2164,35 @@ async function profile() {
     </div>`;
 }
 
-function bucketItemHtml(item, trips) {
+function bucketEditorHtml(item, trips) {
+  return `<div class="bucket-editor">
+    <h4 style="margin:0 0 8px">Avontuur aanpassen</h4>
+    <div class="field"><label for="editBucketTitle">Avontuur *</label><input id="editBucketTitle" maxlength="120" value="${esc(item.title)}"></div>
+    <div class="field"><label for="editBucketDestination">Bestemming</label><input id="editBucketDestination" maxlength="120" value="${esc(item.destination || '')}"></div>
+    <div class="grid">
+      <div class="field"><label for="editBucketCategory">Categorie</label><select id="editBucketCategory">${['Trekking','Packraften','Expeditie','Micro-avontuur','Bergsport','Anders'].map(v=>`<option value="${v}" ${item.category===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="editBucketPriority">Prioriteit</label><select id="editBucketPriority">${['Droom','Grote wens','Binnenkort'].map(v=>`<option value="${v}" ${item.priority===v?'selected':''}>${v}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label for="editBucketTrip">Koppel aan een reis van Dagboek</label><select id="editBucketTrip"><option value="">Geen koppeling</option>${trips.map(t=>`<option value="${esc(t.id)}" ${item.trip_id===t.id?'selected':''}>${esc(t.title)}${t.destination?' · '+esc(t.destination):''}</option>`).join('')}</select></div>
+    <div class="bucket-actions"><button class="btn" onclick="saveBucketItem('${item.id}')">Wijzigingen bewaren</button><button class="btn light" onclick="cancelBucketEdit()">Annuleren</button></div>
+  </div>`;
+}
+
+function bucketItemHtml(item, trips, editable = true) {
   const linked = item.trip_id ? trips.find(t=>t.id===item.trip_id) : null;
   return `<div class="bucket-item">
     <div style="min-width:0;flex:1">
       <div class="bucket-title">${item.completed?'✓ ':''}${esc(item.title)}</div>
       <div class="muted">${[item.destination,item.category].filter(Boolean).map(esc).join(' · ') || 'Avontuur'}</div>
-      <div style="margin-top:6px"><span class="tag">${esc(item.priority)}</span>${linked?` <span class="tag">↗ ${esc(linked.title)}</span>`:''}${item.completed_at?` <span class="muted">Beleefd op ${new Date(item.completed_at).toLocaleDateString('nl-BE')}</span>`:''}</div>
+      <div style="margin-top:6px"><span class="tag">${esc(item.priority)}</span>${item.completed_at?` <span class="muted">Beleefd op ${new Date(item.completed_at).toLocaleDateString('nl-BE')}</span>`:''}</div>
+      ${linked?`<button class="btn light bucket-trip-link" onclick="openTripDiscussion('${linked.id}')">↗ Bekijk ${esc(linked.title)} en het reisgesprek</button>`:''}
+      ${editable && editingBucketItemId===item.id ? bucketEditorHtml(item,trips) : ''}
     </div>
-    <div class="bucket-actions">
+    ${editable ? `<div class="bucket-actions">
       ${item.completed?`<button class="btn light" onclick="toggleBucketItem('${item.id}',false)">Terugzetten</button>`:`<button class="btn" onclick="toggleBucketItem('${item.id}',true)">✓ Beleefd</button>`}
       <button class="btn light" onclick="editBucketItem('${item.id}')">Bewerken</button>
       <button class="btn light" onclick="deleteBucketItem('${item.id}')">Verwijderen</button>
-    </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -2205,21 +2226,28 @@ async function toggleBucketItem(id, completed) {
 }
 
 async function editBucketItem(id) {
-  const {data:item,error} = await sb.from('adventure_bucketlist').select('id,title,destination,category,priority').eq('id',id).eq('user_id',me.id).maybeSingle();
-  if (error || !item) { alert('Dit bucketlist-item kon niet worden gevonden.'); return; }
-  const title = prompt('Avontuur:',item.title);
-  if (title === null) return;
-  if (!title.trim()) { alert('De naam mag niet leeg zijn.'); return; }
-  const destination = prompt('Bestemming:',item.destination||'');
-  if (destination === null) return;
-  const category = prompt('Categorie (Trekking, Packraften, Expeditie, Micro-avontuur, Bergsport of Anders):',item.category||'Anders');
-  if (category === null) return;
-  const priority = prompt('Prioriteit (Droom, Grote wens of Binnenkort):',item.priority||'Droom');
-  if (priority === null) return;
-  const allowedPriorities = ['Droom','Grote wens','Binnenkort'];
-  if (!allowedPriorities.includes(priority.trim())) { alert('Kies als prioriteit: Droom, Grote wens of Binnenkort.'); return; }
-  const {error:updateError} = await sb.from('adventure_bucketlist').update({title:title.trim(),destination:destination.trim()||null,category:category.trim()||null,priority:priority.trim()}).eq('id',id).eq('user_id',me.id);
-  if (updateError) { alert('Aanpassen is niet gelukt: ' + updateError.message); return; }
+  editingBucketItemId = editingBucketItemId === id ? null : id;
+  await render();
+}
+
+async function cancelBucketEdit() {
+  editingBucketItemId = null;
+  await render();
+}
+
+async function saveBucketItem(id) {
+  const title = $('editBucketTitle')?.value.trim();
+  if (!title) { alert('De naam van het avontuur mag niet leeg zijn.'); return; }
+  const payload = {
+    title,
+    destination:$('editBucketDestination')?.value.trim() || null,
+    category:$('editBucketCategory')?.value || 'Anders',
+    priority:$('editBucketPriority')?.value || 'Droom',
+    trip_id:$('editBucketTrip')?.value || null
+  };
+  const {error} = await sb.from('adventure_bucketlist').update(payload).eq('id',id).eq('user_id',me.id);
+  if (error) { alert('Aanpassen is niet gelukt: ' + error.message); return; }
+  editingBucketItemId = null;
   await render();
 }
 
@@ -2252,7 +2280,7 @@ async function openMemberProfile(userId) {
 async function memberProfile() {
   if (!selectedProfileId) return 'Geen profiel geselecteerd.';
   const {data:person,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
+    .select('id,display_name,bio,avatar_url,bucketlist_public').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
   if (error) throw error;
   if (!person) return 'Dit profiel is niet beschikbaar.';
 
@@ -2268,6 +2296,23 @@ async function memberProfile() {
     patches = (data || []).filter(t => tripHasEnded(t));
   }
 
+  let publicBucketItems = [];
+  let publicBucketTrips = [];
+  if (person.bucketlist_public) {
+    const {data:bucketData,error:publicBucketError} = await sb.from('adventure_bucketlist')
+      .select('id,title,destination,category,trip_id,priority,completed,completed_at')
+      .eq('user_id',selectedProfileId).order('created_at',{ascending:false});
+    if (publicBucketError) throw publicBucketError;
+    publicBucketItems = bucketData || [];
+    const linkedIds = [...new Set(publicBucketItems.map(x=>x.trip_id).filter(Boolean))];
+    if (linkedIds.length) {
+      const {data:linkedTrips,error:linkedError} = await sb.from('trips')
+        .select('id,title,destination,status').in('id',linkedIds);
+      if (linkedError) throw linkedError;
+      publicBucketTrips = linkedTrips || [];
+    }
+  }
+
   return section('AVONTURIER','Maak kennis','Ontdek welke avonturen deze BASECAMP-avonturier al heeft beleefd.')
     + `<button class="btn light" onclick="go('discover')">← Terug</button>
       <div class="card">${avatarMarkup(person.avatar_url, person.display_name, 'profile-avatar')}
@@ -2276,7 +2321,12 @@ async function memberProfile() {
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
       <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
-      <div class="card">${patchesHtml(patches)}</div></div>`;
+      <div class="card">${patchesHtml(patches)}</div></div>
+      ${person.bucketlist_public ? `<div style="margin-top:22px">${section('DROMEN & PLANNEN','Avonturenbucketlist','De dromen en avonturen die deze avonturier graag wil beleven of al heeft beleefd.')}
+        <div class="card">
+          <div class="bucket-tabs"><span class="tag">♡ Dromen: ${publicBucketItems.filter(x=>!x.completed).length}</span><span class="tag">✓ Beleefd: ${publicBucketItems.filter(x=>x.completed).length}</span></div>
+          ${publicBucketItems.length ? publicBucketItems.map(item=>bucketItemHtml(item,publicBucketTrips,false)).join('') : '<p class="muted">Deze bucketlist is nog leeg.</p>'}
+        </div></div>` : ''}`;
 }
 
 async function saveProfile() {
@@ -2304,14 +2354,16 @@ async function saveProfile() {
       avatar_url = sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
     }
 
+    const bucketlist_public = Boolean($('bucketlistPublic')?.checked);
     const {error} = await sb.from('profiles')
-      .update({display_name,bio,avatar_url})
+      .update({display_name,bio,avatar_url,bucketlist_public})
       .eq('id',me.id);
     if (error) throw error;
 
     me.display_name = display_name;
     me.bio = bio;
     me.avatar_url = avatar_url;
+    me.bucketlist_public = bucketlist_public;
     $('userLabel').textContent = 'Welkom, ' + display_name;
     await render();
   } catch (error) {
