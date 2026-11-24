@@ -58,7 +58,26 @@ textarea{min-height:80px}
 .bubble{background:#edf0e9;padding:9px 12px;border-radius:10px;margin:7px 0;max-width:85%;font-size:13px}
 .bubble.mine{background:#dce8d9;margin-left:auto}
 .send{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line)}
-.send input{flex:1}
+ .send input{flex:1}
+/* BASECAMP CHATVERNIEUWING */
+.chat{box-shadow:0 5px 18px rgba(38,61,48,.06)}
+.rooms button{transition:background .15s ease,color .15s ease}
+.rooms button:hover{background:#e5e9df;color:var(--g)}
+.chatmain{min-width:0;background:#fff}
+.msgs{scroll-behavior:smooth}
+.bubble{line-height:1.5;overflow-wrap:anywhere}
+.send{align-items:center;background:#fbfaf6}
+.send .send-text{min-width:0;border-radius:22px;background:#fff;padding:12px 15px}
+.send .send-tools .btn{border-radius:22px}
+.message-delete{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 9px;border:1px solid #eadbd5;border-radius:20px;background:#fff7f4;color:#8a493d;font-size:11px;font-weight:650;cursor:pointer}
+.bc-confirm-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(24,36,28,.58);backdrop-filter:blur(3px)}
+.bc-confirm{width:min(100%,390px);background:#f8f6ef;border:1px solid #e4dfd1;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.bc-confirm-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:#f2e7df;color:#89503e;font-size:21px;margin-bottom:13px}
+.bc-confirm h3{font:22px Georgia;color:#263d30;margin:0 0 7px}
+.bc-confirm p{font-size:13px;line-height:1.55;color:#657064;margin:0 0 18px}
+.bc-confirm-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.bc-confirm-actions button{min-height:40px;border-radius:22px;padding:9px 15px}
+.bc-confirm-actions .danger{background:#8b493d;color:white;border:0;font-weight:700}
 .notice{background:#f4ead1;padding:12px;border-radius:9px;font-size:12px;color:#66552e;margin:12px 0}
 .notification-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;margin-left:5px;border-radius:50%;background:#6e865f;color:#fff;font-size:11px;font-weight:800;line-height:1;vertical-align:middle}
 .hidden{display:none!important}
@@ -111,9 +130,19 @@ main{padding:18px 14px 85px}
 .grid{grid-template-columns:1fr}
 .mobile{display:flex;position:fixed;bottom:0;left:0;right:0;background:white;border-top:1px solid var(--line);justify-content:space-around;padding:8px;z-index:5}
 .mobile button{border:0;background:none;font-size:11px;color:#526056}
-.chat{grid-template-columns:112px 1fr}
-.rooms{padding:4px}
-.rooms button{font-size:11px;padding:8px 4px}
+.chat{display:flex;flex-direction:column;min-height:0;border-radius:13px}
+.rooms{display:flex;gap:7px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:9px;background:#f0eee7;border-bottom:1px solid var(--line);scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.rooms button{display:block;flex:0 0 auto;width:auto;min-width:125px;max-width:190px;text-align:left;font-size:12px;padding:9px 12px;border:1px solid #e0dfd5;background:#faf9f5;border-radius:10px;white-space:normal}
+.rooms button.active{background:#e1e9dc;border-color:#9eaf96;color:#263d30}
+.chatmain{min-height:0;width:100%}
+.chatmain>div:first-child{font-size:14px!important;background:#fffdf8}
+.msgs{height:clamp(340px,55vh,620px);max-height:none;min-height:300px;padding:12px 10px;overflow-y:auto}
+.bubble{max-width:92%;font-size:14px;padding:10px 12px;border-radius:13px}
+.send{display:flex;gap:8px;padding:10px;background:#f8f7f1;align-items:center}
+.send .send-text{flex:1 1 100%;width:100%;min-height:44px}
+.send .send-tools{width:100%;justify-content:flex-end}
+.send .send-tools .btn{min-height:40px}
+.photo-previews{width:100%}
 }
 
 /* AVONTURENKALENDER */
@@ -2297,7 +2326,7 @@ async function chat() {
         return `<button class="${c.id === directRoom ? 'active' : ''}" onclick="selectDirectConversation('${c.id}')">${profileIdentity(person,uid)}<br><small class="muted">${new Date(c.last_message_at).toLocaleDateString('nl-BE')}</small></button>`;
       }).join('') || '<p class="muted" style="padding:8px">Je hebt nog geen privégesprekken. Open het profiel van een lid om een gesprek te starten.</p>'}</div>
       <div class="chatmain">${selected ? `<div style="padding:13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${profileIdentity(otherPerson,otherId)}</b><button class="btn light" onclick="hideDirectConversation('${selected.id}')">Verwijder uit mijn lijst</button></div>` : '<div class="muted" style="padding:20px">Kies een gesprek of start een nieuw gesprek via het profiel van een lid.</div>'}
-        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="message-delete" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
         ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto's</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : ''}
       </div></div>`;
     setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
@@ -2322,7 +2351,7 @@ async function chat() {
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(g.name)}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
-      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="btn light" style="margin-top:7px;padding:5px 9px;font-size:12px" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
@@ -2386,8 +2415,31 @@ async function sendDirectMessage() {
   }
 }
 
+function confirmChatDelete(title, description) {
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'bc-confirm-backdrop';
+    const dialog = document.createElement('div');
+    dialog.className = 'bc-confirm';
+    dialog.setAttribute('role','dialog');
+    dialog.setAttribute('aria-modal','true');
+    dialog.innerHTML = `<div class="bc-confirm-mark">⌫</div><h3></h3><p></p><div class="bc-confirm-actions"><button type="button" class="btn light" data-choice="cancel">Annuleren</button><button type="button" class="danger" data-choice="confirm">Verwijderen</button></div>`;
+    dialog.querySelector('h3').textContent = title;
+    dialog.querySelector('p').textContent = description;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    const finish = value => { backdrop.remove(); resolve(value); };
+    dialog.querySelector('[data-choice="cancel"]').addEventListener('click',() => finish(false));
+    dialog.querySelector('[data-choice="confirm"]').addEventListener('click',() => finish(true));
+    backdrop.addEventListener('click',event => { if (event.target === backdrop) finish(false); });
+    const onKey = event => { if (event.key === 'Escape') { document.removeEventListener('keydown',onKey); finish(false); } };
+    document.addEventListener('keydown',onKey);
+    dialog.querySelector('[data-choice="cancel"]').focus();
+  });
+}
+
 async function deleteDirectMessage(id) {
-  if (!confirm('Wil je dit privébericht definitief verwijderen?')) return;
+  if (!await confirmChatDelete('Bericht verwijderen?', 'Dit privébericht wordt definitief verwijderd. Deze actie kun je niet ongedaan maken.')) return;
   const {error} = await sb.from('direct_messages').delete().eq('id',id).eq('sender_id',me.id);
   if (error) { alert('Bericht verwijderen lukte niet: ' + error.message); return; }
   await render();
@@ -2443,7 +2495,7 @@ async function joinGroup(group_id) {
 }
 
 async function deleteChatMessage(message_id) {
-  if (!confirm('Wil je dit chatbericht definitief verwijderen?')) return;
+  if (!await confirmChatDelete('Bericht verwijderen?', 'Dit chatbericht wordt definitief verwijderd voor de deelnemers van deze chat. Deze actie kun je niet ongedaan maken.')) return;
 
   let query = sb.from('messages').delete().eq('id', message_id);
   if (!['admin','moderator'].includes(me.role)) query = query.eq('user_id', me.id);
