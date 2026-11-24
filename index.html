@@ -578,7 +578,7 @@ async function refreshAuth() {
   }
 
   const {data:profile,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,role,status,left_at,bucketlist_public,discoverable,adventure_interests,is_guide')
+    .select('id,display_name,bio,avatar_url,role,status,left_at,bucketlist_public,discoverable,adventure_interests,is_guide,allow_private_messages')
     .eq('id',s.user.id)
     .maybeSingle();
 
@@ -2297,6 +2297,10 @@ async function chat() {
 
   const regularGroups = (groups || []).filter(g => !g.is_private);
   let privateGroups = (groups || []).filter(g => g.is_private);
+  const {data:allMemberships,error:membershipError} = await sb.from('group_members').select('group_id');
+  if (membershipError) throw membershipError;
+  const groupMemberCounts = {};
+  (allMemberships || []).forEach(row => { groupMemberCounts[row.group_id] = (groupMemberCounts[row.group_id] || 0) + 1; });
 
   // Sorteer privéreischats op eerstvolgende reisdatum: komende reizen bovenaan.
   const tripIds = privateGroups.map(g => g.trip_id).filter(Boolean);
@@ -2395,7 +2399,7 @@ async function chat() {
     privateParticipantsHtml = `<div class="chat-participants"><div class="chat-participants-label">AVONTURIERS IN DEZE REISCHAT <span>${sortedParticipants.length}</span></div><div class="chat-participants-list">${sortedParticipants.map(x => profileIdentity(x.person,x.id)).join('') || '<span class="muted">De deelnemers verschijnen hier zodra ze toegang hebben.</span>'}</div></div>`;
   }
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
-    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
+    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
       <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
@@ -2729,6 +2733,7 @@ async function profile() {
       <div class="discover-setting card" style="background:#f7f5ed;margin:14px 0;padding:14px">
         <h3 style="margin-top:0">Andere avonturiers ontmoeten</h3>
         <label style="display:flex;gap:9px;align-items:flex-start"><input id="discoverable" type="checkbox" ${me.discoverable ? 'checked' : ''} style="width:auto;margin-top:3px"><span><b>Mijn profiel tonen bij ‘Avonturiers’</b><small class="muted" style="display:block">Andere goedgekeurde leden kunnen je naam, profielfoto, voorstelling en gekozen interesses vinden.</small></span></label>
+        <label style="display:flex;gap:9px;align-items:flex-start;margin-top:13px"><input id="allowPrivateMessages" type="checkbox" ${me.allow_private_messages !== false ? 'checked' : ''} style="width:auto;margin-top:3px"><span><b>Privéberichten ontvangen</b><small class="muted" style="display:block">Als je dit uitschakelt, kunnen andere leden geen nieuwe privéberichten naar je sturen.</small></span></label>
         <div style="margin-top:13px"><b>Waarvoor mogen andere avonturiers je aanspreken?</b><div class="muted" style="margin:4px 0 9px">Kies de avonturen die jou interesseren.</div>
           <div class="interest-options">${ADVENTURE_INTERESTS.map(v=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:5px 12px 5px 0"><input type="checkbox" name="adventureInterest" value="${v}" ${(me.adventure_interests||[]).includes(v)?'checked':''} style="width:auto">${v}</label>`).join('')}</div>
         </div>
@@ -2903,7 +2908,7 @@ async function openMemberProfile(userId) {
 async function memberProfile() {
   if (!selectedProfileId) return 'Geen profiel geselecteerd.';
   const {data:person,error} = await sb.from('profiles')
-    .select('id,display_name,bio,avatar_url,bucketlist_public,adventure_interests,is_guide').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
+    .select('id,display_name,bio,avatar_url,bucketlist_public,adventure_interests,is_guide,allow_private_messages').eq('id',selectedProfileId).eq('status','approved').maybeSingle();
   if (error) throw error;
   if (!person) return 'Dit profiel is niet beschikbaar.';
 
@@ -2940,7 +2945,7 @@ async function memberProfile() {
     + `<button class="btn light" onclick="communityMode='adventurers';go('community')">← Terug naar Avonturiers</button>
       <div class="card">${avatarMarkup(person.avatar_url, person.display_name, 'profile-avatar')}
       <h3>${esc(person.display_name || 'Avonturier')}</h3><div class="identity-meta" style="margin:0 0 10px">${person.is_guide ? '<span class="identity-role">GIDS</span>' : ''}${communityRank(patches.length) ? `<span class="identity-rank">${esc(communityRank(patches.length))}</span>` : ''}</div>
-      <button class="btn" style="margin:8px 0 14px" onclick="startDirectChat('${person.id}')">✉️ Stuur privébericht</button>
+      ${person.allow_private_messages !== false ? `<button class="btn" style="margin:8px 0 14px" onclick="startDirectChat('${person.id}')">✉️ Stuur privébericht</button>` : '<p class="muted">Deze avonturier ontvangt momenteel geen privéberichten.</p>'}
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
       ${(person.adventure_interests||[]).length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${person.adventure_interests.map(v=>`<span class="tag">${esc(v)}</span>`).join('')}</div>`:''}
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
@@ -2980,9 +2985,10 @@ async function saveProfile() {
 
     const bucketlist_public = Boolean($('bucketlistPublic')?.checked);
     const discoverable = Boolean($('discoverable')?.checked);
+    const allow_private_messages = Boolean($('allowPrivateMessages')?.checked);
     const adventure_interests = [...document.querySelectorAll('input[name="adventureInterest"]:checked')].map(el=>el.value);
     const {error} = await sb.from('profiles')
-      .update({display_name,bio,avatar_url,bucketlist_public,discoverable,adventure_interests})
+      .update({display_name,bio,avatar_url,bucketlist_public,discoverable,adventure_interests,allow_private_messages})
       .eq('id',me.id);
     if (error) throw error;
 
@@ -2991,6 +2997,7 @@ async function saveProfile() {
     me.avatar_url = avatar_url;
     me.bucketlist_public = bucketlist_public;
     me.discoverable = discoverable;
+    me.allow_private_messages = allow_private_messages;
     me.adventure_interests = adventure_interests;
     $('userLabel').textContent = 'Welkom, ' + display_name;
     await render();
