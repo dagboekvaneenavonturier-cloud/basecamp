@@ -331,6 +331,7 @@ let calendarFilter = 'alles';
 let editingCalendarEventId = null;
 let room = null;
 let chatCategory = 'regular';
+let privateChatArchivedView = false;
 let directRoom = null;
 let chatChannel = null;
 let selectedTripId = null;
@@ -2335,6 +2336,11 @@ async function chat() {
   const {data:members} = await sb.from('group_members').select('group_id').eq('user_id',me.id);
   const joined = new Set((members || []).map(m => m.group_id));
 
+  const {data:archivedRows,error:archivedError} = await sb.from('group_chat_archives')
+    .select('group_id').eq('user_id',me.id);
+  if (archivedError) throw archivedError;
+  const archivedGroupIds = new Set((archivedRows || []).map(x => x.group_id));
+
   const {data:hiddenRows,error:hiddenError} = await sb.from('direct_conversation_hidden')
     .select('conversation_id').eq('user_id',me.id);
   if (hiddenError) throw hiddenError;
@@ -2385,7 +2391,8 @@ async function chat() {
     return html;
   }
 
-  const visibleGroups = chatCategory === 'private' ? privateGroups : regularGroups;
+  const privateGroupsForView = privateGroups.filter(g => archivedGroupIds.has(g.id) === privateChatArchivedView);
+  const visibleGroups = chatCategory === 'private' ? privateGroupsForView : regularGroups;
   if (!room || !visibleGroups.some(g => g.id === room)) room = visibleGroups[0]?.id || null;
   const group = (groups || []).find(x => x.id === room);
   let messages = [];
@@ -2410,9 +2417,13 @@ async function chat() {
       .sort((a,b) => String(a.person.display_name || '').localeCompare(String(b.person.display_name || ''), 'nl'));
     privateParticipantsHtml = `<div class="chat-participants"><div class="chat-participants-label">AVONTURIERS IN DEZE REISCHAT <span>${sortedParticipants.length}</span></div><div class="chat-participants-list">${sortedParticipants.map(x => profileIdentity(x.person,x.id)).join('') || '<span class="muted">De deelnemers verschijnen hier zodra ze toegang hebben.</span>'}</div></div>`;
   }
-  const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
-    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
-    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
+  const privateViewTabs = chatCategory === 'private' ? `<div style="display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap">
+    <button class="btn ${!privateChatArchivedView ? '' : 'light'}" onclick="setPrivateChatArchivedView(false)">Actieve chats <span class="tag">${privateGroups.filter(g => !archivedGroupIds.has(g.id)).length}</span></button>
+    <button class="btn ${privateChatArchivedView ? '' : 'light'}" onclick="setPrivateChatArchivedView(true)">Gearchiveerd <span class="tag">${privateGroups.filter(g => archivedGroupIds.has(g.id)).length}</span></button>
+  </div>` : '';
+  const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + privateViewTabs + `<div class="chat">
+    <div class="rooms">${visibleGroups.map(g => `<div style="display:flex;align-items:stretch;gap:5px;margin-bottom:6px"><button style="flex:1;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button>${g.is_private ? `<button class="btn light" style="padding:7px 9px;white-space:nowrap" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${g.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : ''}</div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
+    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
       <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
@@ -2535,6 +2546,29 @@ async function deleteChatGroup(groupId) {
 async function setChatCategory(category) {
   chatCategory = category;
   room = null;
+  await render();
+}
+
+async function setPrivateChatArchivedView(archived) {
+  privateChatArchivedView = !!archived;
+  room = null;
+  await render();
+}
+
+async function archivePrivateChat(groupId) {
+  if (!confirm('Deze privéreischat archiveren? De chat blijft bestaan en andere deelnemers zien geen verschil.')) return;
+  const {error} = await sb.from('group_chat_archives').insert({user_id:me.id,group_id:groupId});
+  if (error && error.code !== '23505') { alert('Archiveren lukte niet: ' + error.message); return; }
+  room = null;
+  privateChatArchivedView = false;
+  await render();
+}
+
+async function restorePrivateChat(groupId) {
+  const {error} = await sb.from('group_chat_archives').delete().eq('user_id',me.id).eq('group_id',groupId);
+  if (error) { alert('Terugzetten lukte niet: ' + error.message); return; }
+  room = null;
+  privateChatArchivedView = true;
   await render();
 }
 
