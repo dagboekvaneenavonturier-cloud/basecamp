@@ -348,6 +348,12 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
   "'":'&#39;'
 }[c]));
 
+// Toon bij privéreischats alleen de leesbare reisnaam; de technische code blijft in de database staan.
+const displayGroupName = g => {
+  const name = String(g?.name || '');
+  return g?.is_private ? name.replace(/\s+[—–-]\s+[a-f0-9]{8}$/i, '') : name;
+};
+
 // Veilige weergave van links, tekst en fotobijlagen.
 function linkifyText(value) {
   const text = String(value ?? '');
@@ -2349,8 +2355,8 @@ async function chat() {
   const names = await profilesFor(messages.map(m => m.user_id));
   const member = room ? joined.has(room) : false;
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
-    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(g.name)}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
-    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(group.name)}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
+    <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
+    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
       <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
