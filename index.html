@@ -338,6 +338,7 @@ let selectedArchiveTripId = null;
 let selectedTravelTripId = null;
 let selectedProfileId = null;
 let adventureInterestFilter = 'Alles';
+let adventureNameSearch = '';
 let communityMode = 'feed';
 let profileMode = 'profile';
 const ADVENTURE_INTERESTS = ['Trekking','Packraften','Expedities','Bergsport','Micro-avonturen','Wildwater','Survival','Kamperen'];
@@ -1134,7 +1135,10 @@ async function adventurers(includeHeading = true) {
   const visiblePeople = (people||[]).filter(person=>person.id!==me.id);
   const directoryPatchCounts = await patchCountsFor(visiblePeople.map(person=>person.id));
   visiblePeople.forEach(person=>{person.patch_count=directoryPatchCounts[person.id]||0;});
-  const filtered = adventureInterestFilter === 'Alles' ? visiblePeople : visiblePeople.filter(p=>(p.adventure_interests||[]).includes(adventureInterestFilter));
+  const nameFiltered = adventureNameSearch.trim()
+    ? visiblePeople.filter(p=>adventureMatchKey(p.display_name).includes(adventureMatchKey(adventureNameSearch)))
+    : visiblePeople;
+  const filtered = adventureInterestFilter === 'Alles' ? nameFiltered : nameFiltered.filter(p=>(p.adventure_interests||[]).includes(adventureInterestFilter));
 
   // Eigen bucketlist mag ook privé zijn; van andere leden halen we uitsluitend openbare bucketlists op.
   const publicBucketUserIds = visiblePeople.filter(p=>p.bucketlist_public).map(p=>p.id);
@@ -1151,6 +1155,7 @@ async function adventurers(includeHeading = true) {
 
   return (includeHeading ? section('ONTMOET ANDERE AVONTURIERS','Avonturiers ontdekken','Vind mensen die dromen van dezelfde tochten, rivieren en expedities.') : '') + `
     <div class="card">
+      <div class="field"><label for="adventureNameSearch">Zoek op gebruikersnaam</label><input id="adventureNameSearch" type="search" value="${esc(adventureNameSearch)}" placeholder="Typ een naam..." oninput="setAdventureSearch(this.value)"></div>
       <div class="field"><label for="adventureInterestFilter">Filter op interesse</label><select id="adventureInterestFilter" onchange="setAdventureFilter(this.value)"><option ${adventureInterestFilter==='Alles'?'selected':''}>Alles</option>${ADVENTURE_INTERESTS.map(v=>`<option value="${v}" ${adventureInterestFilter===v?'selected':''}>${v}</option>`).join('')}</select></div>
       <p class="muted">${filtered.length} ${filtered.length===1?'avonturier':'avonturiers'} gevonden die hun profiel zichtbaar hebben gemaakt.</p>
     </div>
@@ -1179,12 +1184,24 @@ async function adventurers(includeHeading = true) {
         </article>`;
       }).join('')}
     </div>
-    ${filtered.length===0?'<div class="card"><p class="muted">Er zijn nog geen andere avonturiers die bij deze filter passen. Je kunt zelf je profiel zichtbaar maken via Mijn profiel.</p></div>':''}`;
+    ${filtered.length===0?`<div class="card"><p class="muted">${adventureNameSearch.trim()?'Geen avonturier gevonden met deze gebruikersnaam en interessefilter.':'Er zijn nog geen andere avonturiers die bij deze filter passen. Je kunt zelf je profiel zichtbaar maken via Mijn profiel.'}</p></div>`:''}`;
 }
 
 async function setAdventureFilter(value) {
   adventureInterestFilter = ADVENTURE_INTERESTS.includes(value) ? value : 'Alles';
   await render();
+}
+
+async function setAdventureSearch(value) {
+  const input = $('adventureNameSearch');
+  const cursor = input ? input.selectionStart : null;
+  adventureNameSearch = value;
+  await render();
+  const refreshedInput = $('adventureNameSearch');
+  if (refreshedInput) {
+    refreshedInput.focus();
+    if (cursor !== null) refreshedInput.setSelectionRange(cursor, cursor);
+  }
 }
 
 /* ONTDEK */
