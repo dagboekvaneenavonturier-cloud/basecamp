@@ -42,7 +42,7 @@ self.addEventListener('push', event => {
   const options = {
     body: data.body || 'Je hebt een nieuwe melding.',
     icon: './icon-192.png',
-    badge: './icon-192.png',
+  
     data: {
       url: new URL(
         data.url || './index.html',
