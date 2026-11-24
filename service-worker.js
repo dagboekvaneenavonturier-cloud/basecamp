@@ -1,5 +1,5 @@
 
-const CACHE = 'basecamp-shell-v4';
+const CACHE = 'basecamp-shell-v5';
 
 const APP_FILES = [
   './',
@@ -44,7 +44,10 @@ self.addEventListener('push', event => {
     icon: './icon-192.png',
     badge: './icon-192.png',
     data: {
-      url: data.url || './index.html'
+      url: new URL(
+        data.url || './index.html',
+        self.registration.scope
+      ).href
     },
     tag: data.tag || 'basecamp-notification'
   };
@@ -59,7 +62,7 @@ self.addEventListener('notificationclick', event => {
 
   const target = new URL(
     event.notification.data?.url || './index.html',
-    self.location.origin
+    self.registration.scope
   ).href;
 
   event.waitUntil(
