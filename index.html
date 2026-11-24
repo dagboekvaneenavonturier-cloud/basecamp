@@ -266,9 +266,7 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
   <button data-page="discover">⌖<br>Ontdek</button>
   <button data-page="calendar">▦<br>Kalender</button>
 <button data-page="notifications">
-  ♢<br>
-  Meldingen
-  <span id="notificationCountMobile" class="notification-badge hidden"></span>
+  ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
   <button data-page="profile">◉<br>Profiel</button>
   <button data-page="admin" id="adminNavMobile" class="hidden">⚙<br>Beheer</button>
@@ -1447,13 +1445,18 @@ async function myAdventures(includeHeading = true) {
   if (groupIds.length) {
     const {data: groupRows, error: groupsError} = await sb
       .from('groups')
-      .select('id,name,description')
+      .select('id,name,description,is_private,trip_id')
       .in('id', groupIds)
       .order('name');
 
     if (groupsError) throw groupsError;
     groups = groupRows || [];
   }
+
+  // Privéreischats die bij de bevestigde reizen van dit lid horen.
+  const privateTripGroups = Object.fromEntries(
+    (groups || []).filter(g => g.is_private && g.trip_id).map(g => [g.trip_id, g])
+  );
 
   const interestedTrips = interestedIds
     .map(id => tripMap[id])
@@ -1480,16 +1483,26 @@ async function myAdventures(includeHeading = true) {
     return start + (end ? ' – ' + end : '');
   };
 
-  const tripCard = (t, label, buttonText) => `
-    <article class="card">
-      ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">` : ''}
-      <span class="tag">${esc(label)}</span>
-      <h3>${esc(t.title)}</h3>
-      <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
-      <button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>
-      ${participatedIds.includes(t.id) && !tripHasEnded(t) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
-    </article>
-  `;
+  const tripCard = (t, label, buttonText) => {
+    const isConfirmedParticipant = participatedIds.includes(t.id);
+    const privateGroup = privateTripGroups[t.id];
+    const chatButton = isConfirmedParticipant
+      ? (privateGroup
+          ? `<button class="btn light" onclick="openPrivateTripChat('${privateGroup.id}')">Open reischat →</button>`
+          : '<p class="muted" style="margin:8px 0">De privéreischat wordt klaargemaakt.</p>')
+      : `<button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>`;
+
+    return `
+      <article class="card">
+        ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">` : ''}
+        <span class="tag">${esc(label)}</span>
+        <h3>${esc(t.title)}</h3>
+        <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
+        ${chatButton}
+        ${isConfirmedParticipant && !tripHasEnded(t) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
+      </article>
+    `;
+  };
 
   return (includeHeading ? section(
     'JOUW BASECAMP',
@@ -1567,6 +1580,12 @@ async function myAdventures(includeHeading = true) {
 async function openPersonalTravelEnvironment(tripId) {
   selectedTravelTripId = tripId;
   await go('travelInfo');
+}
+
+async function openPrivateTripChat(groupId) {
+  chatCategory = 'private';
+  room = groupId;
+  await go('chat');
 }
 
 async function personalTravelEnvironment() {
