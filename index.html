@@ -190,6 +190,15 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
   .calendar-month strong{min-width:115px;font-size:16px}
 }
 
+.chat-participants{padding:10px 13px 12px;background:#f7f5ee;border-bottom:1px solid var(--line)}
+.chat-participants-label{display:flex;align-items:center;gap:7px;margin-bottom:8px;color:#647261;font-size:9px;font-weight:850;letter-spacing:1.1px}
+.chat-participants-label span{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:20px;background:#e3e9dd;color:var(--g);font-size:10px;letter-spacing:0}
+.chat-participants-list{display:flex;align-items:center;gap:12px;overflow-x:auto;padding:1px 0 4px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.chat-participants-list .profile-identity{flex:0 0 auto;gap:6px}
+.chat-participants-list .avatar{width:32px;height:32px}
+.chat-participants-list .profile-identity-copy{font-size:11px}
+@media(max-width:680px){.chat-participants{padding:9px 10px}.chat-participants-list{gap:10px}.chat-participants-list .profile-identity{gap:5px}.chat-participants-list .avatar{width:30px;height:30px}}
+
 </style>
 </head>
 
@@ -2255,6 +2264,7 @@ async function deleteTripPhoto(id,path) {
   await render();
 }
 
+
 /* CHATGROEPEN */
 
 async function chat() {
@@ -2354,9 +2364,22 @@ async function chat() {
   }
   const names = await profilesFor(messages.map(m => m.user_id));
   const member = room ? joined.has(room) : false;
+  let privateParticipantsHtml = '';
+  if (group?.is_private) {
+    const {data: participantRows, error: participantError} = await sb.from('group_members')
+      .select('user_id').eq('group_id', room);
+    if (participantError) throw participantError;
+    const participantIds = [...new Set((participantRows || []).map(x => x.user_id).filter(Boolean))];
+    const participantProfiles = await profilesFor(participantIds);
+    const sortedParticipants = participantIds
+      .map(id => ({id, person:participantProfiles[id]}))
+      .filter(x => x.person && x.person.status === 'approved')
+      .sort((a,b) => String(a.person.display_name || '').localeCompare(String(b.person.display_name || ''), 'nl'));
+    privateParticipantsHtml = `<div class="chat-participants"><div class="chat-participants-label">AVONTURIERS IN DEZE REISCHAT <span>${sortedParticipants.length}</span></div><div class="chat-participants-list">${sortedParticipants.map(x => profileIdentity(x.person,x.id)).join('') || '<span class="muted">De deelnemers verschijnen hier zodra ze toegang hebben.</span>'}</div></div>`;
+  }
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<button class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')}</small></button>`).join('') || '<p class="muted" style="padding:8px">Nog geen chats in deze categorie.</p>'}</div>
-    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
+    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
       <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
