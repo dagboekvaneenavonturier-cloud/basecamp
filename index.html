@@ -741,7 +741,7 @@ async function profilesFor(ids) {
   const uniqueIds = [...new Set((ids || []).filter(Boolean))];
   if (uniqueIds.length === 0) return {};
   const {data, error} = await sb.from('profiles')
-    .select('id,display_name,avatar_url,is_guide,status').in('id', uniqueIds);
+    .select('id,display_name,avatar_url,is_guide,status,left_at').in('id', uniqueIds);
   if (error) throw error;
   const counts = await patchCountsFor(uniqueIds);
   return Object.fromEntries((data || []).map(p => [p.id, {...p,patch_count:counts[p.id] || 0}]));
@@ -2297,10 +2297,22 @@ async function chat() {
 
   const regularGroups = (groups || []).filter(g => !g.is_private);
   let privateGroups = (groups || []).filter(g => g.is_private);
-  const {data:allMemberships,error:membershipError} = await sb.from('group_members').select('group_id');
+  const {data:allMemberships,error:membershipError} = await sb.from('group_members').select('group_id,user_id');
   if (membershipError) throw membershipError;
+  // Tel alleen leden met een goedgekeurd, actief BASECAMP-profiel mee.
+  const membershipUserIds = [...new Set((allMemberships || []).map(row => row.user_id).filter(Boolean))];
+  let activeUserIds = new Set();
+  if (membershipUserIds.length) {
+    const {data:activeProfiles,error:activeProfilesError} = await sb.from('profiles')
+      .select('id').eq('status','approved').is('left_at',null).in('id',membershipUserIds);
+    if (activeProfilesError) throw activeProfilesError;
+    activeUserIds = new Set((activeProfiles || []).map(profile => profile.id));
+  }
   const groupMemberCounts = {};
-  (allMemberships || []).forEach(row => { groupMemberCounts[row.group_id] = (groupMemberCounts[row.group_id] || 0) + 1; });
+  (allMemberships || []).forEach(row => {
+    if (!activeUserIds.has(row.user_id)) return;
+    groupMemberCounts[row.group_id] = (groupMemberCounts[row.group_id] || 0) + 1;
+  });
 
   // Sorteer privéreischats op eerstvolgende reisdatum: komende reizen bovenaan.
   const tripIds = privateGroups.map(g => g.trip_id).filter(Boolean);
@@ -2394,7 +2406,7 @@ async function chat() {
     const participantProfiles = await profilesFor(participantIds);
     const sortedParticipants = participantIds
       .map(id => ({id, person:participantProfiles[id]}))
-      .filter(x => x.person && x.person.status === 'approved')
+      .filter(x => x.person && x.person.status === 'approved' && !x.person.left_at)
       .sort((a,b) => String(a.person.display_name || '').localeCompare(String(b.person.display_name || ''), 'nl'));
     privateParticipantsHtml = `<div class="chat-participants"><div class="chat-participants-label">AVONTURIERS IN DEZE REISCHAT <span>${sortedParticipants.length}</span></div><div class="chat-participants-list">${sortedParticipants.map(x => profileIdentity(x.person,x.id)).join('') || '<span class="muted">De deelnemers verschijnen hier zodra ze toegang hebben.</span>'}</div></div>`;
   }
