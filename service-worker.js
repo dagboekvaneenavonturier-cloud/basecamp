@@ -1,5 +1,5 @@
 
-const CACHE = 'basecamp-shell-v5';
+const CACHE = 'basecamp-shell-v6';
 
 const APP_FILES = [
   './',
@@ -23,7 +23,10 @@ self.addEventListener('activate', event => {
     caches.keys()
       .then(keys => Promise.all(
         keys
-          .filter(key => key.startsWith('basecamp-shell-') && key !== CACHE)
+          .filter(key =>
+            key.startsWith('basecamp-shell-') &&
+            key !== CACHE
+          )
           .map(key => caches.delete(key))
       ))
       .then(() => self.clients.claim())
@@ -41,8 +44,10 @@ self.addEventListener('push', event => {
 
   const options = {
     body: data.body || 'Je hebt een nieuwe melding.',
-    icon: './icon-192.png',
-  
+    icon: new URL(
+      './icon-192.png',
+      self.registration.scope
+    ).href,
     data: {
       url: new URL(
         data.url || './index.html',
