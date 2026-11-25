@@ -3467,7 +3467,7 @@ async function admin() {
   }
 
   if (adminSection === 'trips') {
-    const {data:trips,error} = await sb.from('trips').select('id,title,destination,status,patch_image_url,start_date,end_date,booking_status,website_url').order('start_date',{ascending:false});
+    const {data:trips,error} = await sb.from('trips').select('id,title,destination,description,image_url,status,patch_image_url,start_date,end_date,booking_status,website_url').order('start_date',{ascending:false});
     if (error) throw error;
     const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id,created_at');
     if (interestError) throw interestError;
@@ -3508,6 +3508,16 @@ async function admin() {
       <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
       <div class="field" style="max-width:340px"><label>Reisstatus</label><select onchange="updateTripBookingStatus('${t.id}',this.value)"><option value="open" ${(t.booking_status||'open')==='open'?'selected':''}>Inschrijvingen open</option><option value="almost_full" ${t.booking_status==='almost_full'?'selected':''}>Bijna vol</option><option value="full" ${t.booking_status==='full'?'selected':''}>Volzet</option><option value="waitlist" ${t.booking_status==='waitlist'?'selected':''}>Wachtlijst</option><option value="closed" ${t.booking_status==='closed'?'selected':''}>Inschrijvingen gesloten</option></select></div>
       <div class="field" style="max-width:560px"><label for="trip-website-${t.id}">Website-link voor meer informatie en boekingen</label><input id="trip-website-${t.id}" type="url" inputmode="url" maxlength="1000" value="${esc(t.website_url||'')}" placeholder="https://dagboekvaneenavonturier.com/..."/><button class="btn light" style="margin-top:7px" onclick="saveTripWebsiteUrl('${t.id}')">Website-link opslaan</button></div>
+      <details style="margin:12px 0"><summary>Reisgegevens bewerken</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">
+        <div class="field"><label for="edit-trip-title-${t.id}">Naam van de reis</label><input id="edit-trip-title-${t.id}" maxlength="180" value="${esc(t.title||'')}"></div>
+        <div class="field"><label for="edit-trip-destination-${t.id}">Bestemming</label><input id="edit-trip-destination-${t.id}" maxlength="250" value="${esc(t.destination||'')}"></div>
+        <div class="field"><label for="edit-trip-start-${t.id}">Startdatum</label><input id="edit-trip-start-${t.id}" type="date" value="${esc(t.start_date||'')}"></div>
+        <div class="field"><label for="edit-trip-end-${t.id}">Einddatum</label><input id="edit-trip-end-${t.id}" type="date" value="${esc(t.end_date||'')}"></div>
+        <div class="field"><label for="edit-trip-description-${t.id}">Omschrijving</label><textarea id="edit-trip-description-${t.id}" rows="5">${esc(t.description||'')}</textarea></div>
+        <div class="field"><label for="edit-trip-website-${t.id}">Website-link</label><input id="edit-trip-website-${t.id}" type="url" maxlength="1000" value="${esc(t.website_url||'')}" placeholder="https://..."></div>
+        <div class="field"><label for="edit-trip-image-${t.id}">Nieuwe reisfoto (optioneel)</label>${t.image_url?`<img src="${esc(t.image_url)}" alt="Huidige reisfoto" style="width:150px;max-height:100px;object-fit:cover;border-radius:8px;display:block;margin:6px 0">`:''}<input id="edit-trip-image-${t.id}" type="file" accept="image/jpeg,image/png,image/webp,image/gif"></div>
+        <button class="btn" onclick="saveTripEdits('${t.id}')">Wijzigingen opslaan</button>
+      </div></details>
       ${people.length?`<div style="display:grid;gap:7px">${people.map(i=>`<div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap">${memberLink(i.user_id,names[i.user_id])}<button class="btn light" onclick="startDirectChat('${i.user_id}')">Stuur privébericht</button></div>`).join('')}</div>`:'<p class="muted">Nog niemand heeft interesse getoond.</p>'}
       <details style="margin:10px 0"><summary>Reisupdate versturen naar geïnteresseerden</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px"><p class="muted">De update wordt als melding verstuurd naar actieve geïnteresseerden die nog geen bevestigde deelnemer zijn.</p><label for="trip-update-title-${t.id}">Titel van de update</label><input id="trip-update-title-${t.id}" maxlength="100" placeholder="Bijv. Nieuwe vertrekdatum bekend"><label for="trip-update-message-${t.id}" style="margin-top:8px">Bericht</label><textarea id="trip-update-message-${t.id}" rows="4" maxlength="2000" placeholder="Vertel wat er nieuw is..."></textarea><button class="btn" style="margin-top:8px" onclick="sendTripUpdate('${t.id}')">Verstuur reisupdate</button></div></details>
       <details><summary>Deelnemers en patch beheren</summary><div style="padding:10px;background:#f7f6f1;border-radius:9px;margin-top:8px">${confirmed.map(x=>`<div class="row" style="padding:5px 0;justify-content:space-between">${memberLink(x.user_id,names[x.user_id])}<button class="btn light" onclick="removeTripParticipant('${x.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen bevestigde deelnemers.</p>'}
@@ -3517,9 +3527,13 @@ async function admin() {
       <details style="margin-top:12px"><summary>Persoonlijke reisomgeving beheren</summary>
         ${travelInfoAdminForm(t.id,travelInfoByTrip[t.id]||{},guidesByTrip[t.id]||[],memberOptions,documentsByTrip[t.id]||[],eventsByTrip[t.id]||[])}
       </details>
-      ${t.status==='published'?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Verwijderen uit aanbod</button>`:''}</div>`;
+      ${t.status==='published' && past.includes(t)?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Afgelopen reis archiveren</button>`:''}
+      ${t.status==='published' && !past.includes(t)?`<button class="btn light" style="margin-top:10px" onclick="archiveTrip('${t.id}')">Uit aanbod nemen</button>`:''}
+      ${t.status==='completed'?`<button class="btn light" style="margin-top:10px" onclick="restoreTrip('${t.id}')">Terugzetten naar gepubliceerd</button>`:''}
+      <button class="btn" style="background:#8b493d;margin-top:10px;margin-left:6px" onclick="deleteTripPermanently('${t.id}')">Definitief verwijderen</button>
+      </div>`;
     };
-    const sections = [['Gepland',upcoming],['Afgelopen',past],['Concepten',drafts]];
+    const sections = [['Gepland',upcoming],['Afgelopen / gearchiveerd',past],['Concepten',drafts]];
     const memberResult = await sb.from('profiles').select('id,display_name').eq('status','approved').order('display_name').limit(500);
     if (memberResult.error) throw memberResult.error;
     const memberOptions = (memberResult.data||[]).map(u=>`<option value="${u.id}">${esc(u.display_name||'Avonturier')}</option>`).join('');
@@ -3757,6 +3771,60 @@ async function uploadTripPatch(tripId) {
   const {error} = await sb.from('trips').update({patch_image_url:url}).eq('id',tripId);
   if (error) return alert('Patch opslaan mislukt: ' + error.message);
   alert('Patch toegevoegd aan deze reis.');
+  await render();
+}
+
+async function saveTripEdits(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const title = $('edit-trip-title-' + tripId)?.value.trim();
+  if (!title) return alert('Vul een reisnaam in.');
+  const startDate = $('edit-trip-start-' + tripId)?.value || null;
+  const endDate = $('edit-trip-end-' + tripId)?.value || null;
+  if (startDate && endDate && endDate < startDate) return alert('De einddatum kan niet vóór de startdatum liggen.');
+  let websiteUrl;
+  try { websiteUrl = normalizeTripWebsiteUrl($('edit-trip-website-' + tripId)?.value || ''); }
+  catch (error) { return alert(error.message || error); }
+  const payload = {
+    title,
+    destination: $('edit-trip-destination-' + tripId)?.value.trim() || null,
+    description: $('edit-trip-description-' + tripId)?.value.trim() || null,
+    start_date: startDate,
+    end_date: endDate,
+    website_url: websiteUrl
+  };
+  const imageInput = $('edit-trip-image-' + tripId);
+  const imageFile = imageInput?.files?.[0];
+  if (imageFile) {
+    const allowed = ['image/jpeg','image/png','image/webp','image/gif'];
+    if (!allowed.includes(imageFile.type) || imageFile.size > 8 * 1024 * 1024) return alert('Gebruik JPG, PNG, WebP of GIF. De foto mag maximaal 8 MB zijn.');
+    const extension = imageFile.name.split('.').pop().toLowerCase();
+    const path = me.id + '/trips/' + tripId + '-' + Date.now() + '.' + extension;
+    const {error:uploadError} = await sb.storage.from('post-images').upload(path,imageFile,{contentType:imageFile.type,upsert:false});
+    if (uploadError) return alert('Nieuwe reisfoto uploaden mislukt: ' + uploadError.message);
+    payload.image_url = sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+  }
+  const {error} = await sb.from('trips').update(payload).eq('id',tripId);
+  if (error) return alert('Reis bewerken mislukt: ' + error.message);
+  alert('De reisgegevens zijn bijgewerkt.');
+  await render();
+}
+
+async function deleteTripPermanently(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  const confirmed = confirm('Wil je deze reis definitief verwijderen? De reis, deelnemers, gesprekken, documenten en gekoppelde reisgegevens worden verwijderd. Deze actie kan niet ongedaan worden gemaakt.');
+  if (!confirmed) return;
+  const {error} = await sb.from('trips').delete().eq('id',tripId);
+  if (error) return alert('Definitief verwijderen mislukt: ' + error.message);
+  alert('De reis is definitief verwijderd.');
+  await render();
+}
+
+async function restoreTrip(tripId) {
+  if (!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
+  if (!confirm('Wil je deze gearchiveerde reis terugzetten naar gepubliceerd?')) return;
+  const {error} = await sb.from('trips').update({status:'published'}).eq('id',tripId).eq('status','completed');
+  if (error) return alert('Reis terugzetten mislukt: ' + error.message);
+  alert('De reis is teruggezet.');
   await render();
 }
 
