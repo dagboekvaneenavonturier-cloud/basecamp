@@ -656,8 +656,74 @@ function navSetup() {
   });
 }
 
+function captureNavigationState() {
+  return {
+    page,
+    room,
+    chatCategory,
+    privateChatArchivedView,
+    directRoom,
+    selectedTripId,
+    selectedArchiveTripId,
+    selectedTravelTripId,
+    selectedProfileId,
+    communityMode,
+    profileMode,
+    discoverMode,
+    calendarMonthOffset,
+    calendarFilter,
+    adminSection,
+    adminTripTab
+  };
+}
+
+function restoreNavigationState(state) {
+  if (!state || !state.page) return;
+  page = state.page;
+  room = state.room ?? null;
+  chatCategory = state.chatCategory || 'regular';
+  privateChatArchivedView = !!state.privateChatArchivedView;
+  directRoom = state.directRoom ?? null;
+  selectedTripId = state.selectedTripId ?? null;
+  selectedArchiveTripId = state.selectedArchiveTripId ?? null;
+  selectedTravelTripId = state.selectedTravelTripId ?? null;
+  selectedProfileId = state.selectedProfileId ?? null;
+  communityMode = state.communityMode || 'feed';
+  profileMode = state.profileMode || 'profile';
+  if (state.discoverMode !== undefined) discoverMode = state.discoverMode;
+  calendarMonthOffset = state.calendarMonthOffset ?? 0;
+  calendarFilter = state.calendarFilter || 'alles';
+  adminSection = state.adminSection || 'overview';
+  adminTripTab = state.adminTripTab || 'upcoming';
+}
+
+async function handleBasecampPopState(event) {
+  if (!me || !event.state?.basecampNavigation) return;
+  restoreNavigationState(event.state.navigation);
+  document.querySelectorAll('[data-page]').forEach(button => {
+    button.classList.toggle('active', button.dataset.page === page);
+  });
+  if (chatChannel) {
+    await sb.removeChannel(chatChannel);
+    chatChannel = null;
+  }
+  await render();
+}
+
 async function go(p) {
   if (p === 'chat') { p = 'community'; communityMode = 'chats'; }
+  if (me) {
+    const currentState = captureNavigationState();
+    try {
+      history.pushState(
+        {basecampNavigation:true, navigation:currentState},
+        '',
+        '#basecamp-' + encodeURIComponent(p)
+      );
+    } catch (error) {
+      console.warn('BASECAMP kon de navigatiegeschiedenis niet bijwerken.', error);
+    }
+  }
   page = p;
 
   document.querySelectorAll('[data-page]').forEach(button => {
@@ -4250,6 +4316,15 @@ async function boot() {
 }
 
 /* KNOPPEN EN NAVIGATIE */
+
+window.addEventListener('popstate', handleBasecampPopState);
+if (!history.state?.basecampNavigation) {
+  history.replaceState(
+    {basecampNavigation:true, navigation:captureNavigationState()},
+    '',
+    location.href
+  );
+}
 
 $('tabLogin').onclick = () => authTab(false);
 $('tabReg').onclick = () => authTab(true);
