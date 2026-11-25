@@ -1817,6 +1817,21 @@ async function tripDiscussion() {
 
 
 
+function communityNotificationPreview(post) {
+  const raw = String(post?.content || '').trim();
+  // Verwijder volledige afbeeldings-/opslag-URL's, ook wanneer ze achter gewone tekst staan.
+  const containsStorageUrl = /https?:\/\/[^\s]+(?:supabase\.co\/storage|storage\/v1\/object|post-images)[^\s]*/i.test(raw);
+  const cleaned = raw
+    .replace(/!?\[[^\]]*\]\(https?:\/\/[^\s)]+\)/gi, '')
+    .replace(/https?:\/\/[^\s<>()]+/gi, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s|·,;:–—-]+$/g, '')
+    .trim();
+  const hasImage = Boolean(post?.image_url) || containsStorageUrl;
+  if (!cleaned) return hasImage ? 'Afbeelding' : 'Communitybericht';
+  return cleaned + (hasImage ? ' · Afbeelding' : '');
+}
+
 async function notifications() {
   const [
     {data: tripItems, error: tripError},
@@ -1975,7 +1990,7 @@ async function notifications() {
                 <span class="badge">Nieuw</span>
               </div>
               <p>Reageerde op jouw bericht:</p>
-              <p class="muted">${esc((post.content || '').trim() && !/^https?:\/\//i.test((post.content || '').trim()) ? post.content : (post.image_url ? 'Afbeelding' : 'Communitybericht'))}${post.image_url ? ' · Afbeelding' : ''}</p>
+              <p class="muted">${esc(communityNotificationPreview(post))}</p>
               <p>${esc(comment.content)}</p>
               <button class="btn light"
                 onclick="openPostNotification('${n.id}','${n.post_id}')">
@@ -2888,7 +2903,7 @@ async function profile() {
       <button class="btn light" style="border-color:#a65b43;color:#8d432f" onclick="leaveCommunity()">Mijn account stopzetten</button>
     </div>
     <div style="margin-top:22px">${section('MIJN VERZAMELING','Mijn avonturenpatches','Een tastbare herinnering aan elke reis die je met Dagboek van een Avonturier hebt beleefd.')}
-      <div class="card">${patchesHtml(patches)}</div>
+      <div class="card"><div class="tag" style="display:inline-flex;margin:0 0 14px">🏅 ${patches.length} ${patches.length === 1 ? 'verzamelde patch' : 'verzamelde patches'}</div>${patchesHtml(patches)}</div>
     </div>`;
 }
 
