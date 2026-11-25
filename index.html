@@ -48,7 +48,7 @@ textarea{min-height:80px}
 .feedtop{font-size:12px;color:#68756b}
 .post p{white-space:pre-wrap}
 .post button{background:none;border:0;color:#617064;cursor:pointer}
-.post img{display:block}.post-photo-grid,.message-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin:10px 0}.post-photo-grid img{width:100%;height:180px;object-fit:cover;border-radius:9px}.message-photo-grid{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));max-width:360px}.message-photo-grid img{width:100%;height:125px;object-fit:cover;border-radius:8px;display:block}.message-text{white-space:pre-wrap;overflow-wrap:anywhere}.message-text a,.post a{color:#456b4d;text-decoration:underline;text-underline-offset:2px}.photo-previews{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:10px}.photo-previews img{width:100%;height:95px;object-fit:cover;border-radius:8px}.send{flex-wrap:wrap}.send .send-text{flex:1;min-width:120px}.send .send-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.send .send-tools input[type=file]{display:none}
+.post img{display:block}.post-photo-grid,.message-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:7px;margin:10px 0}.post-photo-grid img{width:100%;height:180px;object-fit:cover;border-radius:9px}.message-photo-grid{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));max-width:360px}.message-photo-grid video{display:block;width:100%;max-height:420px;object-fit:contain;border-radius:12px;background:#17231b}.post-photo-grid video{display:block;width:100%;max-height:460px;object-fit:contain;border-radius:12px;background:#17231b}.message-photo-grid img{width:100%;height:125px;object-fit:cover;border-radius:8px;display:block}.message-text{white-space:pre-wrap;overflow-wrap:anywhere}.message-text a,.post a{color:#456b4d;text-decoration:underline;text-underline-offset:2px}.photo-previews{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:10px}.photo-previews img{width:100%;height:95px;object-fit:cover;border-radius:8px}.send{flex-wrap:wrap}.send .send-text{flex:1;min-width:120px}.send .send-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.send .send-tools input[type=file]{display:none}
 .chat{display:grid;grid-template-columns:180px 1fr;min-height:390px;border:1px solid var(--line);background:white;border-radius:12px;overflow:hidden}
 .rooms{background:#f0eee7;padding:8px}
 .rooms button{display:block;width:100%;text-align:left;padding:10px;border:0;background:none;border-radius:7px;cursor:pointer}
@@ -398,6 +398,12 @@ function postImageUrls(value) {
 }
 
 const CHAT_MEDIA_PREFIX = '[[BASECAMP_MEDIA]]';
+function mediaItemHtml(url, alt = 'Gedeelde media') {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return '';
+  const path = url.split('?')[0].toLowerCase();
+  if (/\.(mp4|webm|mov|m4v)$/.test(path)) return `<video controls playsinline preload="metadata" style="width:100%;max-height:420px;border-radius:12px;background:#17231b"><source src="${esc(url)}"></video>`;
+  return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="${esc(alt)}" loading="lazy"></a>`;
+}
 function messageContentHtml(value) {
   let content = String(value ?? '');
   let media = [];
@@ -408,7 +414,17 @@ function messageContentHtml(value) {
       media = Array.isArray(payload.images) ? payload.images : [];
     } catch (_) {}
   }
-  return `${content ? `<div class="message-text">${linkifyText(content)}</div>` : ''}${media.length ? `<div class="message-photo-grid">${media.filter(url => typeof url === 'string' && /^https?:\/\//i.test(url)).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Gedeelde foto" loading="lazy"></a>`).join('')}</div>` : ''}`;
+  return `${content ? `<div class="message-text">${linkifyText(content)}</div>` : ''}${media.length ? `<div class="message-photo-grid">${media.map(url => mediaItemHtml(url)).join('')}</div>` : ''}`;
+}
+function messageTextOnly(value) {
+  const content = String(value ?? '');
+  if (!content.startsWith(CHAT_MEDIA_PREFIX)) return content;
+  try { return JSON.parse(content.slice(CHAT_MEDIA_PREFIX.length)).text || ''; } catch (_) { return content; }
+}
+function messageMedia(value) {
+  const content = String(value ?? '');
+  if (!content.startsWith(CHAT_MEDIA_PREFIX)) return [];
+  try { const payload = JSON.parse(content.slice(CHAT_MEDIA_PREFIX.length)); return Array.isArray(payload.images) ? payload.images : []; } catch (_) { return []; }
 }
 
 const initials = s => (s || 'A')
@@ -865,12 +881,12 @@ async function postsHtml() {
         · ${new Date(p.created_at).toLocaleString('nl-BE')}
       </div>
       ${p.user_id === me.id ? `
-        <button class="btn light" onclick="deleteCommunityPost('${p.id}')">Mijn bericht verwijderen</button>
+        <button class="btn light" onclick="editCommunityPost('${p.id}')">Bewerken</button> <button class="btn light" onclick="deleteCommunityPost('${p.id}')">Verwijderen</button>
       ` : ''}
 
       ${p.content ? `<p>${linkifyText(p.content)}</p>` : ''}
 
-      ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="Foto bij communitybericht" loading="lazy"></a>`).join('')}</div>` : ''}
+      ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => mediaItemHtml(url, 'Media bij communitybericht')).join('')}</div>` : ''}
 
       <button onclick="toggleLike('${p.id}',${liked})">
         ${liked ? '♥' : '♡'} ${count} vind-ik-leuks
@@ -886,7 +902,7 @@ async function postsHtml() {
           ${linkifyText(c.content)}
           ${c.user_id === me.id ? `
             <div style="margin-top:5px">
-              <button class="btn light" onclick="deleteCommunityComment('${c.id}')">Mijn reactie verwijderen</button>
+              <button class="btn light" onclick="editCommunityComment('${c.id}')">Bewerken</button> <button class="btn light" onclick="deleteCommunityComment('${c.id}')">Verwijderen</button>
             </div>
           ` : ''}
         </div>
@@ -901,9 +917,9 @@ function composer() {
     <textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea>
     <div id="postPhotoPreviews" class="photo-previews"></div>
     <div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-      <button type="button" class="btn light" onclick="document.getElementById('postImages').click()">▧ Foto's toevoegen</button>
-      <input id="postImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" onchange="previewPostImages()">
-      <span class="muted">Max. 10 foto's · JPG, PNG, WebP of GIF · max. 8 MB per foto</span>
+      <button type="button" class="btn light" onclick="document.getElementById('postImages').click()">▧ Foto's/video toevoegen</button>
+      <input id="postImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple class="hidden" onchange="previewPostImages()">
+      <span class="muted">Max. 10 bestanden · foto max. 8 MB, video max. 50 MB</span>
     </div>
     <div class="row" style="margin-top:14px">
       <span class="muted">Een vraag, verhaal of avontuur...</span>
@@ -915,22 +931,24 @@ function composer() {
 function previewPostImages() {
   const input = $('postImages');
   const files = Array.from(input?.files || []);
-  const allowed = ['image/jpeg','image/png','image/webp','image/gif'];
-  if (files.length > 10) { alert("Je kunt maximaal 10 foto's tegelijk toevoegen."); input.value=''; return; }
-  const invalid = files.find(f => !allowed.includes(f.type) || f.size > 8 * 1024 * 1024);
-  if (invalid) { alert('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.'); input.value=''; $('postPhotoPreviews').innerHTML=''; return; }
-  $('postPhotoPreviews').innerHTML = files.map(file => `<div><img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld"><div class="muted">${esc(file.name)}</div></div>`).join('');
+  if (files.length > 10) { alert('Je kunt maximaal 10 bestanden tegelijk toevoegen.'); input.value=''; return; }
+  const allowedImages = ['image/jpeg','image/png','image/webp','image/gif'];
+  const allowedVideos = ['video/mp4','video/webm','video/quicktime'];
+  const invalid = files.find(f => !(allowedImages.includes(f.type) && f.size <= 8*1024*1024) && !(allowedVideos.includes(f.type) && f.size <= 50*1024*1024));
+  if (invalid) { alert('Gebruik JPG, PNG, WebP of GIF (max. 8 MB) of MP4, WebM of MOV (max. 50 MB).'); input.value=''; $('postPhotoPreviews').innerHTML=''; return; }
+  $('postPhotoPreviews').innerHTML = files.map(file => `<div>${file.type.startsWith('video/') ? `<video src="${URL.createObjectURL(file)}" muted controls style="max-width:150px;max-height:110px"></video>` : `<img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld">`}<div class="muted">${esc(file.name)}</div></div>`).join('');
 }
 
 async function uploadSelectedImages(inputId) {
   const files = Array.from($(inputId)?.files || []);
-  if (files.length > 10) throw new Error("Je kunt maximaal 10 foto's tegelijk toevoegen.");
-  const allowed = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'};
+  if (files.length > 10) throw new Error('Je kunt maximaal 10 bestanden tegelijk toevoegen.');
+  const allowed = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov'};
   const urls = [];
   const paths = [];
   try {
     for (const file of files) {
-      if (!allowed[file.type] || file.size > 8 * 1024 * 1024) throw new Error('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.');
+      const isVideo = file.type.startsWith('video/');
+      if (!allowed[file.type] || file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error('Foto’s mogen maximaal 8 MB zijn en video’s maximaal 50 MB. Gebruik JPG, PNG, WebP, GIF, MP4, WebM of MOV.');
       const path = me.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.' + allowed[file.type];
       const {error} = await sb.storage.from('post-images').upload(path,file,{contentType:file.type,upsert:false});
       if (error) throw error;
@@ -954,7 +972,7 @@ function clearPostImages() {
 async function addPost() {
   const content = $('newPost').value.trim();
   const files = Array.from($('postImages')?.files || []);
-  if (!content && !files.length) { alert("Schrijf een bericht of voeg foto's toe."); return; }
+  if (!content && !files.length) { alert("Schrijf een bericht of voeg media toe."); return; }
   const button = $('postButton');
   button.disabled = true;
   button.textContent = 'Bezig...';
@@ -1068,6 +1086,41 @@ async function community() {
   return heading + communityTabs(communityMode) + content;
 }
 
+function basecampTextModal(title, description, initialValue = '', placeholder = 'Schrijf hier...') {
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div'); backdrop.className = 'bc-confirm-backdrop';
+    const dialog = document.createElement('div'); dialog.className = 'bc-confirm'; dialog.setAttribute('role','dialog'); dialog.setAttribute('aria-modal','true');
+    dialog.innerHTML = `<div class="bc-confirm-mark">✎</div><h3></h3><p></p><textarea class="bc-modal-textarea" rows="5" style="width:100%;box-sizing:border-box;margin:0 0 16px;padding:12px;border:1px solid #d8d1c1;border-radius:10px;background:#fffdf8;color:#263d30;font:inherit;resize:vertical"></textarea><div class="bc-confirm-actions"><button type="button" class="btn light" data-choice="cancel">Annuleren</button><button type="button" class="btn" data-choice="save">Opslaan</button></div>`;
+    dialog.querySelector('h3').textContent = title; dialog.querySelector('p').textContent = description;
+    const textarea = dialog.querySelector('textarea'); textarea.value = initialValue; textarea.placeholder = placeholder;
+    backdrop.appendChild(dialog); document.body.appendChild(backdrop);
+    let closed = false;
+    const finish = value => { if (closed) return; closed = true; document.removeEventListener('keydown',onKey); backdrop.remove(); resolve(value); };
+    const onKey = event => { if (event.key === 'Escape') finish(null); if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') finish(textarea.value.trim() || null); };
+    dialog.querySelector('[data-choice="cancel"]').addEventListener('click',() => finish(null));
+    dialog.querySelector('[data-choice="save"]').addEventListener('click',() => finish(textarea.value.trim() || null));
+    backdrop.addEventListener('click',event => { if (event.target === backdrop) finish(null); });
+    document.addEventListener('keydown',onKey); textarea.focus(); textarea.setSelectionRange(textarea.value.length,textarea.value.length);
+  });
+}
+
+async function editCommunityPost(id) {
+  const {data,error} = await sb.from('posts').select('content').eq('id',id).eq('user_id',me.id).maybeSingle();
+  if (error || !data) { alert('Je bericht kon niet worden geladen.'); return; }
+  const content = await basecampTextModal('Bericht bewerken','Pas je communitybericht aan.',data.content || '');
+  if (content === null) return;
+  const result = await sb.from('posts').update({content}).eq('id',id).eq('user_id',me.id);
+  if (result.error) alert('Bericht bewerken lukte niet: ' + result.error.message); else await render();
+}
+async function editCommunityComment(id) {
+  const {data,error} = await sb.from('comments').select('content').eq('id',id).eq('user_id',me.id).maybeSingle();
+  if (error || !data) { alert('Je reactie kon niet worden geladen.'); return; }
+  const content = await basecampTextModal('Reactie bewerken','Pas je reactie aan.',data.content || '');
+  if (content === null) return;
+  const result = await sb.from('comments').update({content}).eq('id',id).eq('user_id',me.id);
+  if (result.error) alert('Reactie bewerken lukte niet: ' + result.error.message); else await render();
+}
+
 async function deleteCommunityPost(post_id) {
   if (!confirm('Wil je dit communitybericht definitief verwijderen?')) return;
 
@@ -1108,8 +1161,8 @@ async function toggleLike(post_id, liked) {
 }
 
 async function addComment(post_id) {
-  const content = prompt('Jouw reactie:');
-  if (!content || !content.trim()) return;
+  const content = await basecampTextModal('Reageer op dit bericht','Deel je reactie met de community.');
+  if (!content) return;
 
   const {error} = await sb.from('comments').insert({
     post_id,
@@ -2282,8 +2335,8 @@ async function chat() {
         return `<button class="${c.id === directRoom ? 'active' : ''}" onclick="selectDirectConversation('${c.id}')">${profileIdentity(person,uid)}<br><small class="muted">${new Date(c.last_message_at).toLocaleDateString('nl-BE')}</small></button>`;
       }).join('') || '<p class="muted" style="padding:8px">Je hebt nog geen privégesprekken. Open het profiel van een lid om een gesprek te starten.</p>'}</div>
       <div class="chatmain">${selected ? `<div style="padding:13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${profileIdentity(otherPerson,otherId)}</b><button class="btn light" onclick="hideDirectConversation('${selected.id}')">Verwijder uit mijn lijst</button></div>` : '<div class="muted" style="padding:20px">Kies een gesprek of start een nieuw gesprek via het profiel van een lid.</div>'}
-        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="message-delete" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-        ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto's</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : ''}
+        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="message-delete" onclick="editDirectMessage('${m.id}')">Bewerken</button> <button class="message-delete" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+        ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto/video</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : ''}
       </div></div>`;
     setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
     if (selected) chatChannel = sb.channel('basecamp-direct-' + selected.id)
@@ -2325,8 +2378,8 @@ async function chat() {
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + privateViewTabs + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<div style="margin-bottom:6px"><button style="width:100%;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button></div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
-      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br><button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto's</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
+      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
   if (group) chatChannel = sb.channel('basecamp-chat-' + room)
@@ -2354,12 +2407,11 @@ async function hideDirectConversation(id) {
 }
 
 function previewChatImages(inputId, previewId) {
-  const input = $(inputId);
-  const files = Array.from(input?.files || []);
-  const allowed = ['image/jpeg','image/png','image/webp','image/gif'];
-  if (files.length > 10) { alert("Je kunt maximaal 10 foto's tegelijk toevoegen."); input.value=''; return; }
-  if (files.some(f => !allowed.includes(f.type) || f.size > 8 * 1024 * 1024)) { alert('Gebruik JPG, PNG, WebP of GIF. Elke foto mag maximaal 8 MB zijn.'); input.value=''; return; }
-  $(previewId).innerHTML = files.map(file => `<div><img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld"><div class="muted">${esc(file.name)}</div></div>`).join('');
+  const input = $(inputId); const files = Array.from(input?.files || []);
+  if (files.length > 10) { alert('Je kunt maximaal 10 bestanden tegelijk toevoegen.'); input.value=''; return; }
+  const images = ['image/jpeg','image/png','image/webp','image/gif']; const videos = ['video/mp4','video/webm','video/quicktime'];
+  if (files.some(f => !(images.includes(f.type) && f.size <= 8*1024*1024) && !(videos.includes(f.type) && f.size <= 50*1024*1024))) { alert('Foto’s max. 8 MB en video’s max. 50 MB. Gebruik JPG, PNG, WebP, GIF, MP4, WebM of MOV.'); input.value=''; $(previewId).innerHTML=''; return; }
+  $(previewId).innerHTML = files.map(file => `<div>${file.type.startsWith('video/') ? `<video src="${URL.createObjectURL(file)}" muted controls style="max-width:150px;max-height:110px"></video>` : `<img src="${URL.createObjectURL(file)}" alt="Fotovoorbeeld">`}<div class="muted">${esc(file.name)}</div></div>`).join('');
 }
 
 async function buildMessagePayload(textValue, inputId) {
@@ -2410,6 +2462,27 @@ function confirmChatDelete(title, description) {
     document.addEventListener('keydown',onKey);
     dialog.querySelector('[data-choice="cancel"]').focus();
   });
+}
+
+async function editDirectMessage(id) {
+  const {data,error} = await sb.from('direct_messages').select('content').eq('id',id).eq('sender_id',me.id).maybeSingle();
+  if (error || !data) { alert('Je bericht kon niet worden geladen.'); return; }
+  const text = await basecampTextModal('Privébericht bewerken','Pas de tekst van je bericht aan.',messageTextOnly(data.content));
+  if (text === null) return;
+  const media = messageMedia(data.content);
+  const content = media.length ? CHAT_MEDIA_PREFIX + JSON.stringify({text,images:media}) : text;
+  const result = await sb.from('direct_messages').update({content}).eq('id',id).eq('sender_id',me.id);
+  if (result.error) alert('Bericht bewerken lukte niet: ' + result.error.message); else await render();
+}
+async function editChatMessage(id) {
+  const {data,error} = await sb.from('messages').select('content').eq('id',id).eq('user_id',me.id).maybeSingle();
+  if (error || !data) { alert('Je bericht kon niet worden geladen.'); return; }
+  const text = await basecampTextModal('Chatbericht bewerken','Pas de tekst van je bericht aan.',messageTextOnly(data.content));
+  if (text === null) return;
+  const media = messageMedia(data.content);
+  const content = media.length ? CHAT_MEDIA_PREFIX + JSON.stringify({text,images:media}) : text;
+  const result = await sb.from('messages').update({content}).eq('id',id).eq('user_id',me.id);
+  if (result.error) alert('Bericht bewerken lukte niet: ' + result.error.message); else await render();
 }
 
 async function deleteDirectMessage(id) {
