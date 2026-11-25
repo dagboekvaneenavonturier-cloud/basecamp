@@ -1135,6 +1135,22 @@ async function home() {
       </div>
     </section>
 
+    <section class="card" style="margin:30px 0;padding:25px 26px;background:linear-gradient(120deg,rgba(232,224,199,.96),rgba(247,243,231,.98));border:1px solid rgba(112,91,53,.25)">
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+        <div style="font-size:34px;line-height:1">✉️</div>
+        <div style="flex:1;min-width:220px">
+          <div class="eyebrow">NEEM IEMAND MEE NAAR BASECAMP</div>
+          <h2 style="font:25px Georgia;margin:7px 0 9px">Avonturen zijn leuker samen.</h2>
+          <p style="line-height:1.7;margin:0 0 16px">Ken je iemand die graag buiten is, nieuwe plekken ontdekt of droomt van een volgend avontuur? Nodig die vriend(in) uit en maak onze community samen wat groter.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn gold" type="button" onclick="inviteBasecampFriend('whatsapp')">☏ Nodig uit via WhatsApp</button>
+            <button class="btn light" type="button" onclick="inviteBasecampFriend('email')">✉ Nodig uit via e-mail</button>
+          </div>
+          <p class="muted" style="font-size:12px;line-height:1.6;margin:12px 0 0">De uitnodiging bevat de link naar BASECAMP en korte instructies om de app op het startscherm te plaatsen.</p>
+        </div>
+      </div>
+    </section>
+
     <div class="hero" style="margin-top:30px;padding:27px 28px">
       <div class="eyebrow">HET AVONTUUR BEGINT HIER</div>
       <h2 style="font:25px Georgia;margin:10px 0">Zin om mee op pad te gaan?</h2>
@@ -1145,6 +1161,16 @@ async function home() {
       <button class="btn gold" onclick="go('discover')">Vind jouw volgende avontuur →</button>
     </div>
   `;
+}
+
+function inviteBasecampFriend(channel) {
+  const inviteUrl = window.location.origin + window.location.pathname;
+  const message = `Hey! Ik zit op BASECAMP, de community van Dagboek van een Avonturier. Een plek om andere avonturiers te leren kennen, inspiratie op te doen en op de hoogte te blijven van reizen en activiteiten. Kom er gerust bij!\n\nOpen BASECAMP hier: ${inviteUrl}\n\nJe kunt BASECAMP ook als app op je startscherm zetten: open de link op je telefoon. Op iPhone gebruik je in Safari de knop Deel en kies je ‘Zet op beginscherm’. Op Android kies je in Chrome ‘Installeren’ of ‘Toevoegen aan startscherm’.`;
+  if (channel === 'whatsapp') {
+    window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank', 'noopener');
+  } else if (channel === 'email') {
+    window.location.href = 'mailto:?subject=' + encodeURIComponent('Kom erbij op BASECAMP!') + '&body=' + encodeURIComponent(message);
+  }
 }
 
 function communityTabs(active) {
