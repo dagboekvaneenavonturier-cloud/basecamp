@@ -1712,7 +1712,7 @@ async function myAdventures(includeHeading = true) {
   const guidedTrips=guidedIds.map(id=>tripMap[id]).filter(t=>t&&isPlanned(t));
   const pastTrips=[...new Map(allTripIds.map(id=>tripMap[id]).filter(isPast).filter(t=>archivedIds.has(t.id)).map(t=>[t.id,t])).values()].sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')));
   const unarchivedPastTrips=[...new Map(allTripIds.map(id=>tripMap[id]).filter(isPast).filter(t=>!archivedIds.has(t.id)).map(t=>[t.id,t])).values()].sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')));
-  const completedParticipatedTrips=participatedIds.map(id=>tripMap[id]).filter(t=>t&&isPast(t));
+  const completedParticipatedTrips=[...new Map([...participatedIds,...guidedIds].map(id=>tripMap[id]).filter(t=>t&&isPast(t)).map(t=>[t.id,t])).values()];
   const dateLabel=t=>{
     if(!t.start_date&&!t.end_date) return 'Datum volgt';
     const a=t.start_date?new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE'):'';
@@ -1733,7 +1733,7 @@ async function myAdventures(includeHeading = true) {
       <div class="card"><div class="eyebrow">CHATGROEPEN</div><h3>${groups.length}</h3><p class="muted">Groepen waarvan je lid bent</p></div>
       <div class="card"><div class="eyebrow">REISGESPREKKEN</div><h3>${discussedTrips.length}</h3><p class="muted">Geplande reizen waarin je iets hebt geplaatst</p></div>
     </div>
-    <div style="margin-top:24px">${section('JOUW VERZAMELING','Avonturenpatches',`${completedParticipatedTrips.length} ${completedParticipatedTrips.length===1?'avontuur':'avonturen'} beleefd`)}<div class="card">${patchesHtml(completedParticipatedTrips)}</div></div>
+    <div style="margin-top:24px">${section('JOUW VERZAMELING','Avonturenpatches',`${completedParticipatedTrips.length} ${completedParticipatedTrips.length===1?'avontuur':'avonturen'} beleefd of begeleid`)}<div class="card">${patchesHtml(completedParticipatedTrips)}</div></div>
     <div style="margin-top:24px">${section('JOUW BOEKINGEN','Mijn geplande reizen','Hier vind je je toekomstige boekingen en de reizen die je als gids begeleidt.')}<div class="grid">${[...participatedTrips.map(t=>tripCard(t,'Bevestigde deelname','Open reischat →')), ...guidedTrips.filter(t=>!participatedIds.includes(t.id)).map(t=>tripCard(t,'Je bent gids','Open reisgesprek →'))].join('')||'<div class="card"><p class="muted">Je hebt momenteel geen geplande reizen.</p></div>'}</div></div>
     <div style="margin-top:24px">${section('OP JOUW RADAR','Reizen waarin je interesse hebt','Je kunt hier verder praten over de reizen die je volgt.')}<div class="grid">${interestedTrips.map(t=>tripCard(t,'Je hebt interesse','Open reisgesprek →')).join('')||'<div class="card"><p class="muted">Je volgt momenteel geen geplande reizen.</p><button class="btn" onclick="go(\'discover\')">Ontdek reizen</button></div>'}</div></div>
     <div style="margin-top:24px">${section('JOUW BIJDRAGEN','Reisgesprekken','Reizen waarover je zelf al een vraag of bericht hebt geplaatst.')}<div class="grid">${discussedTrips.map(t=>tripCard(t,'Je nam deel aan het gesprek','Verder praten →')).join('')||'<div class="card"><p class="muted">Je hebt nog geen berichten geplaatst in gesprekken over geplande reizen.</p></div>'}</div></div>
@@ -3022,10 +3022,13 @@ async function disablePushNotifications() {
 
 async function profile() {
   if (profileMode === 'adventures') return section('JOUW BASECAMP','Mijn profiel','Bekijk je profielgegevens en je persoonlijke avonturenoverzicht.') + profileTabs('adventures') + await myAdventures(false);
-  const {data:participantRows,error} = await sb.from('trip_participants')
-    .select('trip_id').eq('user_id',me.id);
+  const [{data:participantRows,error},{data:guideRows,error:guideError}] = await Promise.all([
+    sb.from('trip_participants').select('trip_id').eq('user_id',me.id),
+    sb.from('trip_guides').select('trip_id').eq('guide_user_id',me.id)
+  ]);
   if (error) throw error;
-  const ids = [...new Set((participantRows || []).map(x => x.trip_id))];
+  if (guideError) throw guideError;
+  const ids = [...new Set([...(participantRows || []).map(x => x.trip_id),...(guideRows || []).map(x => x.trip_id)])];
   let patches = [];
   if (ids.length) {
     const {data,error:tripError} = await sb.from('trips')
@@ -3251,10 +3254,13 @@ async function memberProfile() {
   if (error) throw error;
   if (!person) return 'Dit profiel is niet beschikbaar.';
 
-  const {data:rows,error:participantError} = await sb.from('trip_participants')
-    .select('trip_id').eq('user_id',selectedProfileId);
+  const [{data:rows,error:participantError},{data:guideRows,error:guideError}] = await Promise.all([
+    sb.from('trip_participants').select('trip_id').eq('user_id',selectedProfileId),
+    sb.from('trip_guides').select('trip_id').eq('guide_user_id',selectedProfileId)
+  ]);
   if (participantError) throw participantError;
-  const ids = [...new Set((rows || []).map(x => x.trip_id))];
+  if (guideError) throw guideError;
+  const ids = [...new Set([...(rows || []).map(x => x.trip_id),...(guideRows || []).map(x => x.trip_id)])];
   let patches = [];
   if (ids.length) {
     const {data,error:tripError} = await sb.from('trips')
@@ -3288,7 +3294,7 @@ async function memberProfile() {
       <p style="white-space:pre-wrap">${esc(person.bio || 'Deze avonturier heeft nog geen voorstelling toegevoegd.')}</p>
       ${(person.adventure_interests||[]).length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${person.adventure_interests.map(v=>`<span class="tag">${esc(v)}</span>`).join('')}</div>`:''}
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
-      <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
+      <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon heeft deelgenomen of die deze persoon heeft begeleid.')}
       <div class="card"><div class="tag" style="display:inline-flex;margin:0 0 14px">🏅 ${patches.length} ${patches.length === 1 ? 'verzamelde patch' : 'verzamelde patches'}</div>${patchesHtml(patches)}</div></div>
       ${person.bucketlist_public ? `<div style="margin-top:22px">${section('DROMEN & PLANNEN','Avonturenbucketlist','De dromen en avonturen die deze avonturier graag wil beleven of al heeft beleefd.')}
         <div class="card">
