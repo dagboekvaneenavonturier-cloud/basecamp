@@ -317,7 +317,7 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
   <button data-page="discover">⌖<br>Ontdek</button>
   <button data-page="calendar">▦<br>Kalender</button>
 <button data-page="notifications">
-  ♢ Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
+  ♢<br>Meldingen <span id="notificationCountMobile" class="notification-badge hidden"></span>
 </button>
   <button data-page="profile">◉<br>Profiel</button>
   <button data-page="admin" id="adminNavMobile" class="hidden">⚙<br>Beheer</button>
@@ -2604,6 +2604,37 @@ function basecampInfoModal(title, description, mark = 'ℹ') {
   });
 }
 
+function confirmChatLeave(title, description, confirmLabel = 'Bevestigen') {
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'bc-confirm-backdrop';
+    const dialog = document.createElement('div');
+    dialog.className = 'bc-confirm';
+    dialog.setAttribute('role','dialog');
+    dialog.setAttribute('aria-modal','true');
+    dialog.innerHTML = `<div class="bc-confirm-mark">↗</div><h3></h3><p></p><div class="bc-confirm-actions"><button type="button" class="btn light" data-choice="cancel">Toch blijven</button><button type="button" class="danger" data-choice="confirm"></button></div>`;
+    dialog.querySelector('h3').textContent = title;
+    dialog.querySelector('p').textContent = description;
+    dialog.querySelector('[data-choice="confirm"]').textContent = confirmLabel;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    let closed = false;
+    const finish = value => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown',onKey);
+      backdrop.remove();
+      resolve(value);
+    };
+    dialog.querySelector('[data-choice="cancel"]').addEventListener('click',() => finish(false));
+    dialog.querySelector('[data-choice="confirm"]').addEventListener('click',() => finish(true));
+    backdrop.addEventListener('click',event => { if (event.target === backdrop) finish(false); });
+    const onKey = event => { if (event.key === 'Escape') finish(false); };
+    document.addEventListener('keydown',onKey);
+    dialog.querySelector('[data-choice="cancel"]').focus();
+  });
+}
+
 function confirmChatDelete(title, description) {
   return new Promise(resolve => {
     const backdrop = document.createElement('div');
@@ -2737,10 +2768,15 @@ async function leaveChatGroup(groupId) {
     .select('id,name,is_private').eq('id',groupId).maybeSingle();
   if (groupError) { alert('De chatgroep kon niet worden gecontroleerd: ' + groupError.message); return; }
   if (!group || group.is_private) { alert('Je kunt een privéreischat niet verlaten.'); return; }
-  if (!confirm(`Wil je de gewone chatgroep “${group.name}” verlaten? Je kunt later opnieuw aansluiten.`)) return;
+  const confirmed = await confirmChatLeave(
+    'Chatgroep verlaten?',
+    `Wil je de groep “${group.name}” verlaten? Je ziet de berichten daarna niet meer en kunt later opnieuw lid worden.`,
+    'Groep verlaten'
+  );
+  if (!confirmed) return;
   const {error} = await sb.from('group_members').delete()
     .eq('group_id',groupId).eq('user_id',me.id);
-  if (error) { alert('De chatgroep verlaten lukte niet: ' + error.message); return; }
+  if (error) { await basecampInfoModal('Groep verlaten lukte niet','BASECAMP kon je niet uit deze chatgroep verwijderen. Probeer het opnieuw. Details: '+error.message,'⚠'); return; }
   room = null;
   await render();
 }
