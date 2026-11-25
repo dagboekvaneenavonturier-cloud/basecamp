@@ -1818,14 +1818,48 @@ async function tripDiscussion() {
 
 
 function cleanNotificationText(value) {
-  const raw = String(value || '').trim();
-  const hasMediaReference = /(?:https?:\/\/[^\s<>()]+|post-images\/[^^\s<>()]+|storage\/v1\/object[^\s<>()]*|\.(?:jpe?g|png|gif|webp|mp4|webm|mov)(?:[?#][^\s<>()]*)?)/i.test(raw);
+  let raw = String(value || '').trim();
+  let hasMediaReference = false;
+
+  // Communityberichten met media worden opgeslagen als een speciale envelope:
+  // [[BASECAMP_MEDIA]]{"text":"...","images":["..."],"videos":[]}
+  // Haal eerst de echte tekst uit die envelope, anders lekken JSON en URL's in meldingen.
+  const mediaPrefix = '[[BASECAMP_MEDIA]]';
+  if (raw.startsWith(mediaPrefix)) {
+    const payloadText = raw.slice(mediaPrefix.length).trim();
+    try {
+      const payload = JSON.parse(payloadText);
+      if (payload && typeof payload === 'object') {
+        raw = String(payload.text || '').trim();
+        hasMediaReference = Boolean(
+          (Array.isArray(payload.images) && payload.images.length) ||
+          (Array.isArray(payload.videos) && payload.videos.length) ||
+          (Array.isArray(payload.media) && payload.media.length)
+        );
+      }
+    } catch (error) {
+      // Fallback voor oudere of beschadigde media-envelopes: haal tekstveld eruit
+      // en markeer media zodra een images/videos-array of mediapad aanwezig is.
+      const textMatch = payloadText.match(/"text"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+      if (textMatch) {
+        try { raw = JSON.parse('"' + textMatch[1] + '"'); }
+        catch (_) { raw = textMatch[1]; }
+      } else {
+        raw = '';
+      }
+      hasMediaReference = /"(?:images|videos|media)"\s*:\s*\[\s*"/i.test(payloadText) ||
+        /https?:\/\/[^\s"']+\.(?:jpe?g|png|gif|webp|mp4|webm|mov)(?:[?#][^\s"']*)?/i.test(payloadText);
+    }
+  }
+
+  hasMediaReference = hasMediaReference || /(?:https?:\/\/[^\s<>()]+|post-images\/[^\s<>()]+|storage\/v1\/object[^\s<>()]*|\.(?:jpe?g|png|gif|webp|mp4|webm|mov)(?:[?#][^\s<>()]*)?)/i.test(raw);
   const cleaned = raw
+    .replace(/\[\[BASECAMP_MEDIA\]\]/gi, '')
     // Verwijder HTML-media, Markdown-afbeeldingen en Markdown-links.
     .replace(/<img\b[^>]*>/gi, '')
     .replace(/!?\[[^\]]*\]\(https?:\/\/[^\s)]+\)/gi, '')
     .replace(/!?\[[^\]]*\]\(\s*[^)]+\)/gi, '')
-    // Verwijder ook kale URL's, Supabase-opslagpaden en afbeeldingsbestandsnamen.
+    // Verwijder kale URL's, Supabase-opslagpaden en afbeeldingsbestandsnamen.
     .replace(/https?:\/\/[^\s<>()]+/gi, '')
     .replace(/(?:[\w.-]+\.supabase\.co\/)?storage\/v1\/object[^\s<>()]*/gi, '')
     .replace(/(?:^|\s)post-images\/[^\s<>()]+/gi, ' ')
