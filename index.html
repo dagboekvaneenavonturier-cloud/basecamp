@@ -2094,7 +2094,7 @@ async function notifications() {
                 <span class="badge">Nieuw bericht</span>
               </div>
               <p><b>${esc(group.name)}</b></p>
-              <p>${esc(message.content)}</p>
+              <p>${(() => { const preview = cleanNotificationText(message.content); return esc(preview.cleaned || (preview.hasMediaReference ? 'Afbeelding' : 'Nieuw chatbericht')) + (preview.cleaned && preview.hasMediaReference ? ' · Afbeelding' : ''); })()}</p>
               <button class="btn light"
                 onclick="openChatNotification('${n.id}','${n.group_id}')">
                 Open chat →
