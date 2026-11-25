@@ -1566,7 +1566,7 @@ async function personalTravelEnvironment() {
     sb.from('trip_travel_info').select('*').eq('trip_id',selectedTravelTripId).maybeSingle(),
     sb.from('trip_guides').select('guide_user_id,role_label,sort_order').eq('trip_id',selectedTravelTripId).order('sort_order'),
     sb.from('trip_documents').select('*').eq('trip_id',selectedTravelTripId).order('created_at',{ascending:false}),
-    sb.from('trip_preparation_events').select('*').eq('trip_id',selectedTravelTripId).gte('event_date',new Date().toISOString().slice(0,10)).order('event_date')
+    sb.from('trip_preparation_events').select('*').eq('trip_id',selectedTravelTripId).or(`event_date.gte.${localDateISO()},end_date.gte.${localDateISO()}`).order('event_date')
   ]);
   for (const e of [tripError,infoError,guideError,documentsError,eventsError]) if (e) throw e;
   if (!trip) return '<div class="notice">Deze reis kon niet worden gevonden.</div>';
@@ -1577,7 +1577,7 @@ async function personalTravelEnvironment() {
     if(signedError) return `<div class="notice error">${esc(doc.file_name)} kon niet worden klaargezet om te downloaden.</div>`;
     return `<div class="row" style="justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>▤ ${esc(doc.file_name)}</b><div class="muted">${doc.file_size?Math.max(1,Math.round(doc.file_size/1024))+' KB':'Document'}</div></div><a class="btn light" href="${esc(signed.signedUrl)}" target="_blank" rel="noopener" download>Download</a></div>`;
   }));
-  const preparationEvents = (events||[]).map(event=>`<div style="display:flex;gap:13px;padding:12px 0;border-bottom:1px solid var(--line)"><div style="min-width:82px;text-align:center;background:#edf0e9;border-radius:9px;padding:8px 5px"><b>${new Date(event.event_date+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'short'})}</b><div class="muted">${new Date(event.event_date+'T12:00:00').getFullYear()}</div></div><div><b>${esc(event.title)}</b>${event.description?`<div class="muted" style="white-space:pre-wrap;margin-top:3px">${esc(event.description)}</div>`:''}</div></div>`).join('');
+  const preparationEvents = (events||[]).map(event=>{const start=new Date(event.event_date+'T12:00:00');const end=event.end_date?new Date(event.end_date+'T12:00:00'):null;const dateLabel=end&&event.end_date!==event.event_date?`${start.toLocaleDateString('nl-BE',{day:'numeric',month:'short',year:start.getFullYear()!==end.getFullYear()?'numeric':undefined})} – ${end.toLocaleDateString('nl-BE',{day:'numeric',month:'short',year:'numeric'})}`:start.toLocaleDateString('nl-BE',{day:'numeric',month:'short',year:'numeric'});return `<div style="display:flex;gap:13px;padding:12px 0;border-bottom:1px solid var(--line)"><div style="min-width:110px;text-align:center;background:#edf0e9;border-radius:9px;padding:8px 5px"><b>${dateLabel}</b></div><div><b>${esc(event.title)}</b>${event.description?`<div class="muted" style="white-space:pre-wrap;margin-top:3px">${esc(event.description)}</div>`:''}</div></div>`}).join('');
   const block = (title,content,icon) => content ? `<section class="card"><h3>${icon||'⌖'} ${title}</h3><div style="white-space:pre-wrap;line-height:1.65">${esc(content)}</div></section>` : '';
   const packingList = info?.packing_list ? (() => {
     const items = String(info.packing_list).split(/\r?\n/).map(line => line.trim()).filter(Boolean)
@@ -3266,9 +3266,10 @@ function travelInfoAdminForm(tripId,info,guides,memberOptions,documents=[],event
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <h3>Belangrijke data & voorbereidingsmomenten</h3>
     <p class="muted">Voeg komende afspraken en deadlines toe, zoals voorbereidingsweekends, briefings en betalingstermijnen.</p>
-    ${(events||[]).map(event=>`<div class="row" style="justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(event.title)}</b><div class="muted">${new Date(event.event_date+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}${event.description?' · '+esc(event.description):''}</div></div><button class="btn light" onclick="deleteTripPreparationEvent('${event.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen belangrijke data toegevoegd.</p>'}
-    <div class="field"><label>Nieuwe datum – titel</label><input id="prep-title-${tripId}" placeholder="Bijv. Voorbereidingsweekend"></div>
-    <div class="field"><label>Datum</label><input id="prep-date-${tripId}" type="date"></div>
+    ${(events||[]).map(event=>`<div class="row" style="justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><div><b>${esc(event.title)}</b><div class="muted">${new Date(event.event_date+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}${event.end_date&&event.end_date!==event.event_date?' – '+new Date(event.end_date+'T12:00:00').toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'}):''}${event.description?' · '+esc(event.description):''}</div></div><button class="btn light" onclick="deleteTripPreparationEvent('${event.id}')">Verwijderen</button></div>`).join('')||'<p class="muted">Nog geen belangrijke data toegevoegd.</p>'}
+    <div class="field"><label>Titel</label><input id="prep-title-${tripId}" placeholder="Bijv. Voorbereidingsweekend"></div>
+    <div class="field"><label>Begindatum</label><input id="prep-date-${tripId}" type="date"></div>
+    <div class="field"><label>Einddatum (optioneel, voor een meerdaags moment)</label><input id="prep-end-date-${tripId}" type="date"></div>
     <div class="field"><label>Toelichting (optioneel)</label><textarea id="prep-description-${tripId}" rows="2" placeholder="Locatie, wat deelnemers moeten meenemen, betaaldeadline..."></textarea></div>
     <button class="btn light" onclick="addTripPreparationEvent('${tripId}')">Belangrijke datum toevoegen</button>
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
@@ -3313,9 +3314,13 @@ async function deleteTripDocument(id,path) {
 
 async function addTripPreparationEvent(tripId) {
   if(!['admin','moderator'].includes(me?.role)) return alert('Geen toegang.');
-  const title=$('prep-title-'+tripId)?.value.trim(), event_date=$('prep-date-'+tripId)?.value, description=$('prep-description-'+tripId)?.value.trim();
-  if(!title||!event_date) return alert('Vul minstens een titel en datum in.');
-  const {error}=await sb.from('trip_preparation_events').insert({trip_id:tripId,title,event_date,description:description||null});
+  const title=$('prep-title-'+tripId)?.value.trim();
+  const event_date=$('prep-date-'+tripId)?.value;
+  const end_date=$('prep-end-date-'+tripId)?.value || null;
+  const description=$('prep-description-'+tripId)?.value.trim();
+  if(!title||!event_date) return alert('Vul minstens een titel en begindatum in.');
+  if(end_date && end_date<event_date) return alert('De einddatum kan niet vóór de begindatum liggen.');
+  const {error}=await sb.from('trip_preparation_events').insert({trip_id:tripId,title,event_date,end_date,description:description||null});
   if(error) return alert('Datum toevoegen mislukt: '+error.message);
   await render();
 }
@@ -3343,7 +3348,9 @@ async function saveTravelInfo(tripId) {
       const {error:insertError}=await sb.from('trip_guides').insert(selected.map((guide_user_id,index)=>({trip_id:tripId,guide_user_id,role_label:'Gids',sort_order:index})));
       if(insertError)throw insertError;
     }
-    alert('De persoonlijke reisomgeving is bijgewerkt.');
+    const {error:syncError}=await sb.rpc('admin_sync_trip_chat_members',{p_trip_id:tripId});
+    if(syncError)throw syncError;
+    alert('De persoonlijke reisomgeving is bijgewerkt. De toegewezen gidsen zijn ook aan de privéreischat toegevoegd.');
     await render();
   } catch(error) {
     alert('Opslaan van de reisomgeving is mislukt: '+(error.message||error));
@@ -3759,6 +3766,8 @@ async function confirmTripParticipant(tripId) {
   if (!userId) return alert('Kies eerst een lid.');
   const {error} = await sb.from('trip_participants').insert({trip_id:tripId,user_id:userId,confirmed_by:me.id});
   if (error) return alert('Deelname bevestigen mislukt: ' + error.message);
+  const {error:syncError}=await sb.rpc('admin_sync_trip_chat_members',{p_trip_id:tripId});
+  if(syncError) return alert('Deelname is bevestigd, maar de privéreischat kon niet worden bijgewerkt: '+syncError.message);
   alert('Deelname bevestigd. De patch verschijnt op het profiel zodra er een patchafbeelding is toegevoegd.');
   await render();
 }
@@ -3766,8 +3775,11 @@ async function confirmTripParticipant(tripId) {
 async function removeTripParticipant(participantId) {
   if (!['admin','moderator'].includes(me.role)) return alert('Geen toegang.');
   if (!confirm('Wil je deze bevestigde deelname verwijderen? De patch verdwijnt dan ook van het profiel.')) return;
+  const {data:participant,error:lookupError}=await sb.from('trip_participants').select('trip_id').eq('id',participantId).maybeSingle();
+  if(lookupError) return alert('Deelname ophalen mislukt: '+lookupError.message);
   const {error} = await sb.from('trip_participants').delete().eq('id',participantId);
   if (error) return alert('Deelname verwijderen mislukt: ' + error.message);
+  if(participant?.trip_id){const {error:syncError}=await sb.rpc('admin_sync_trip_chat_members',{p_trip_id:participant.trip_id});if(syncError)return alert('Deelname verwijderd, maar de privéreischat kon niet worden bijgewerkt: '+syncError.message);}
   await render();
 }
 
