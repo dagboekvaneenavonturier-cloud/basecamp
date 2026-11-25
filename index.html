@@ -70,6 +70,7 @@ textarea{min-height:80px}
 .send .send-text{min-width:0;border-radius:22px;background:#fff;padding:12px 15px}
 .send .send-tools .btn{border-radius:22px}
 .message-delete{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 9px;border:1px solid #eadbd5;border-radius:20px;background:#fff7f4;color:#8a493d;font-size:11px;font-weight:650;cursor:pointer}
+.bc-poll{margin:12px 0;padding:13px;background:#f7f5ed;border:1px solid #ded7c5;border-radius:13px;max-width:520px}.bc-poll-title{font-weight:700;color:#293f31;margin-bottom:9px}.bc-poll-option{width:100%;display:flex;justify-content:space-between;gap:12px;text-align:left;padding:10px 12px;margin:5px 0;border:1px solid #d8d1c1;border-radius:9px;background:#fffdf8;color:#293f31;cursor:pointer}.bc-poll-option.selected{border-color:#587b55;background:#eaf0e5}.bc-poll-foot{font-size:12px;color:#697568;margin-top:8px}.bc-poll-fields{margin-top:10px;padding:12px;background:#f7f5ed;border:1px solid #ded7c5;border-radius:11px}.bc-poll-fields input,.bc-poll-fields textarea{width:100%;box-sizing:border-box;margin:5px 0;padding:10px;border:1px solid #d8d1c1;border-radius:8px;background:#fffdf8;color:#293f31;font:inherit}
 .bc-confirm-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(24,36,28,.58);backdrop-filter:blur(3px)}
 .bc-confirm{width:min(100%,390px);background:#f8f6ef;border:1px solid #e4dfd1;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 .bc-confirm-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:#f2e7df;color:#89503e;font-size:21px;margin-bottom:13px}
@@ -835,6 +836,58 @@ function startNotificationRefresh() {
   }, 15000);
 }
 
+/* POLLS */
+function togglePollFields(id) {
+  const el = $(id);
+  if (el) el.classList.toggle('hidden');
+}
+function readPollDraft(questionId, optionsId) {
+  const question = String($(questionId)?.value || '').trim();
+  const options = String($(optionsId)?.value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (!question && !options.length) return null;
+  if (!question || options.length < 2) throw new Error('Vul een pollvraag en minstens twee antwoordopties in.');
+  if (options.length > 6) throw new Error('Een poll kan maximaal 6 antwoordopties hebben.');
+  return {question, options};
+}
+async function savePoll(contextType, contextId, draft) {
+  if (!draft) return;
+  const {error} = await sb.from('basecamp_polls').insert({
+    creator_id:me.id, context_type:contextType, context_id:contextId,
+    question:draft.question, options:draft.options
+  });
+  if (error) throw error;
+}
+async function pollsFor(contextType, contextIds) {
+  const ids = [...new Set((contextIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const {data:polls,error} = await sb.from('basecamp_polls').select('id,context_id,question,options,creator_id').eq('context_type',contextType).in('context_id',ids);
+  if (error) throw error;
+  const pollIds = (polls || []).map(p => p.id);
+  let votes = [];
+  if (pollIds.length) {
+    const result = await sb.from('basecamp_poll_votes').select('poll_id,user_id,option_index').in('poll_id',pollIds);
+    if (result.error) throw result.error;
+    votes = result.data || [];
+  }
+  const output = {};
+  (polls || []).forEach(p => {
+    const options = Array.isArray(p.options) ? p.options : [];
+    const pollVotes = votes.filter(v => v.poll_id === p.id);
+    const mine = pollVotes.find(v => v.user_id === me.id);
+    output[p.context_id] = `<div class="bc-poll"><div class="bc-poll-title">📊 ${esc(p.question)}</div>${options.map((option,index) => {
+      const count = pollVotes.filter(v => v.option_index === index).length;
+      const selected = mine?.option_index === index;
+      return `<button type="button" class="bc-poll-option ${selected ? 'selected' : ''}" onclick="voteInPoll('${p.id}',${index})"><span>${esc(String(option))}${selected ? ' ✓' : ''}</span><b>${count}</b></button>`;
+    }).join('')}<div class="bc-poll-foot">${pollVotes.length} ${pollVotes.length === 1 ? 'stem' : 'stemmen'} · ${mine ? 'Je kunt je stem wijzigen' : 'Kies je antwoord'}</div></div>`;
+  });
+  return output;
+}
+async function voteInPoll(pollId, optionIndex) {
+  const {error} = await sb.from('basecamp_poll_votes').upsert({poll_id:pollId,user_id:me.id,option_index:optionIndex},{onConflict:'poll_id,user_id'});
+  if (error) { alert('Stemmen lukte niet: ' + error.message); return; }
+  await render();
+}
+
 /* COMMUNITYBERICHTEN EN FOTO'S */
 
 async function postsHtml() {
@@ -869,6 +922,7 @@ async function postsHtml() {
   }
 
   const commentNames = await profilesFor(comments.map(c => c.user_id));
+  const postPolls = await pollsFor('post', ids);
 
   return (posts || []).map(p => {
     const postComments = comments.filter(c => c.post_id === p.id);
@@ -885,6 +939,7 @@ async function postsHtml() {
       ` : ''}
 
       ${p.content ? `<p>${linkifyText(p.content)}</p>` : ''}
+      ${postPolls[p.id] || ''}
 
       ${postImageUrls(p.image_url).length ? `<div class="post-photo-grid">${postImageUrls(p.image_url).map(url => mediaItemHtml(url, 'Media bij communitybericht')).join('')}</div>` : ''}
 
@@ -916,6 +971,8 @@ function composer() {
     <div class="eyebrow">DEEL IETS MET DE COMMUNITY</div>
     <textarea id="newPost" placeholder="Wat houdt je bezig, avonturier?"></textarea>
     <div id="postPhotoPreviews" class="photo-previews"></div>
+    <div style="margin-top:10px"><button type="button" class="btn light" onclick="togglePollFields('postPollFields')">📊 Poll toevoegen</button></div>
+    <div id="postPollFields" class="bc-poll-fields hidden"><input id="postPollQuestion" placeholder="Pollvraag"><textarea id="postPollOptions" rows="4" placeholder="Antwoordoptie 1&#10;Antwoordoptie 2&#10;Antwoordoptie 3"></textarea><small class="muted">Zet elke antwoordoptie op een nieuwe regel (2 tot 6 opties).</small></div>
     <div style="margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
       <button type="button" class="btn light" onclick="document.getElementById('postImages').click()">▧ Foto's/video toevoegen</button>
       <input id="postImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple class="hidden" onchange="previewPostImages()">
@@ -972,7 +1029,9 @@ function clearPostImages() {
 async function addPost() {
   const content = $('newPost').value.trim();
   const files = Array.from($('postImages')?.files || []);
-  if (!content && !files.length) { alert("Schrijf een bericht of voeg media toe."); return; }
+  let pollDraft;
+  try { pollDraft = readPollDraft('postPollQuestion','postPollOptions'); } catch (error) { alert(error.message); return; }
+  if (!content && !files.length && !pollDraft) { alert("Schrijf een bericht, voeg media toe of maak een poll."); return; }
   const button = $('postButton');
   button.disabled = true;
   button.textContent = 'Bezig...';
@@ -980,8 +1039,9 @@ async function addPost() {
   try {
     const uploaded = await uploadSelectedImages('postImages');
     uploadedPaths = uploaded.paths;
-    const {error} = await sb.from('posts').insert({user_id:me.id,content,image_url:uploaded.urls.length ? JSON.stringify(uploaded.urls) : null});
+    const {data:createdPost,error} = await sb.from('posts').insert({user_id:me.id,content,image_url:uploaded.urls.length ? JSON.stringify(uploaded.urls) : null}).select('id').single();
     if (error) throw error;
+    await savePoll('post',createdPost.id,pollDraft);
     await render();
   } catch (error) {
     if (uploadedPaths.length) await sb.storage.from('post-images').remove(uploadedPaths);
@@ -2327,6 +2387,7 @@ async function chat() {
       directMessages = data || [];
     }
     const directNames = await profilesFor(directMessages.map(m => m.sender_id));
+    const directPolls = await pollsFor('direct_message',directMessages.map(m => m.id));
     const otherPerson = otherId ? people[otherId] : null;
     const html = section('PRAAT MEE','Privéberichten','Persoonlijke gesprekken tussen jou en andere BASECAMP-leden.') + tabHtml + `<div class="chat">
       <div class="rooms">${directConversations.map(c => {
@@ -2335,8 +2396,8 @@ async function chat() {
         return `<button class="${c.id === directRoom ? 'active' : ''}" onclick="selectDirectConversation('${c.id}')">${profileIdentity(person,uid)}<br><small class="muted">${new Date(c.last_message_at).toLocaleDateString('nl-BE')}</small></button>`;
       }).join('') || '<p class="muted" style="padding:8px">Je hebt nog geen privégesprekken. Open het profiel van een lid om een gesprek te starten.</p>'}</div>
       <div class="chatmain">${selected ? `<div style="padding:13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${profileIdentity(otherPerson,otherId)}</b><button class="btn light" onclick="hideDirectConversation('${selected.id}')">Verwijder uit mijn lijst</button></div>` : '<div class="muted" style="padding:20px">Kies een gesprek of start een nieuw gesprek via het profiel van een lid.</div>'}
-        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${m.sender_id === me.id ? `<br><button class="message-delete" onclick="editDirectMessage('${m.id}')">Bewerken</button> <button class="message-delete" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-        ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto/video</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : ''}
+        <div class="msgs" id="directMsgs">${directMessages.map(m => `<div class="bubble ${m.sender_id === me.id ? 'mine' : ''}">${profileIdentity(directNames[m.sender_id],m.sender_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${directPolls[m.id] || ''}${m.sender_id === me.id ? `<br><button class="message-delete" onclick="editDirectMessage('${m.id}')">Bewerken</button> <button class="message-delete" onclick="deleteDirectMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+        ${selected ? `<div class="send"><input class="send-text" id="directText" placeholder="Schrijf een privébericht..." onkeydown="if(event.key==='Enter')sendDirectMessage()"><div class="send-tools"><label class="btn light" for="directImages">▧ Foto/video</label><input id="directImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('directImages','directPhotoPreviews')"><button class="btn" onclick="sendDirectMessage()">Verstuur</button></div><div id="directPhotoPreviews" class="photo-previews" style="width:100%"></div><div style="width:100%"><button type="button" class="btn light" onclick="togglePollFields('directPollFields')">📊 Poll toevoegen</button><div id="directPollFields" class="bc-poll-fields hidden"><input id="directPollQuestion" placeholder="Pollvraag"><textarea id="directPollOptions" rows="3" placeholder="Optie 1&#10;Optie 2"></textarea><small class="muted">2 tot 6 antwoordopties, elk op een nieuwe regel.</small></div></div></div>` : ''}
       </div></div>`;
     setTimeout(() => { const el = $('directMsgs'); if (el) el.scrollTop = el.scrollHeight; },0);
     if (selected) chatChannel = sb.channel('basecamp-direct-' + selected.id)
@@ -2357,6 +2418,7 @@ async function chat() {
     messages = messageRows || [];
   }
   const names = await profilesFor(messages.map(m => m.user_id));
+  const chatPolls = await pollsFor('message',messages.map(m => m.id));
   const member = room ? joined.has(room) : false;
   let privateParticipantsHtml = '';
   if (group?.is_private) {
@@ -2378,8 +2440,8 @@ async function chat() {
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + privateViewTabs + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<div style="margin-bottom:6px"><button style="width:100%;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button></div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
-      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
+      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${chatPolls[m.id] || ''}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
+      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div><div style="width:100%"><button type="button" class="btn light" onclick="togglePollFields('chatPollFields')">📊 Poll toevoegen</button><div id="chatPollFields" class="bc-poll-fields hidden"><input id="chatPollQuestion" placeholder="Pollvraag"><textarea id="chatPollOptions" rows="3" placeholder="Optie 1&#10;Optie 2"></textarea><small class="muted">2 tot 6 antwoordopties, elk op een nieuwe regel.</small></div></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
   if (group) chatChannel = sb.channel('basecamp-chat-' + room)
@@ -2428,11 +2490,13 @@ async function sendDirectMessage() {
   const button = document.querySelector('#directMsgs')?.parentElement?.querySelector('.send .btn:last-of-type');
   let paths = [];
   try {
+    const pollDraft = readPollDraft('directPollQuestion','directPollOptions');
     const payload = await buildMessagePayload(input?.value, 'directImages');
-    if (!payload) return;
-    paths = payload.paths;
-    const {error} = await sb.from('direct_messages').insert({conversation_id:directRoom,sender_id:me.id,content:payload.content});
+    if (!payload && !pollDraft) return;
+    paths = payload?.paths || [];
+    const {data:createdMessage,error} = await sb.from('direct_messages').insert({conversation_id:directRoom,sender_id:me.id,content:payload?.content || ''}).select('id').single();
     if (error) throw error;
+    await savePoll('direct_message',createdMessage.id,pollDraft);
     await render();
   } catch (error) {
     if (paths.length) await sb.storage.from('post-images').remove(paths);
@@ -2583,11 +2647,13 @@ async function sendMessage() {
   const input = $('chatText');
   let paths = [];
   try {
+    const pollDraft = readPollDraft('chatPollQuestion','chatPollOptions');
     const payload = await buildMessagePayload(input?.value, 'chatImages');
-    if (!payload) return;
-    paths = payload.paths;
-    const {error} = await sb.from('messages').insert({group_id:room,user_id:me.id,content:payload.content});
+    if (!payload && !pollDraft) return;
+    paths = payload?.paths || [];
+    const {data:createdMessage,error} = await sb.from('messages').insert({group_id:room,user_id:me.id,content:payload?.content || ''}).select('id').single();
     if (error) throw error;
+    await savePoll('message',createdMessage.id,pollDraft);
     await render();
   } catch (error) {
     if (paths.length) await sb.storage.from('post-images').remove(paths);
