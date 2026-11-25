@@ -2471,8 +2471,12 @@ async function chat() {
   const visibleGroups = chatCategory === 'private' ? privateGroupsForView : regularGroups;
   if (!room || !visibleGroups.some(g => g.id === room)) room = visibleGroups[0]?.id || null;
   const group = (groups || []).find(x => x.id === room);
+  const member = room ? joined.has(room) : false;
+  // Gewone chatgroepen zijn uitsluitend leesbaar voor leden. Beheerders krijgen
+  // geen automatische toegang tot de gespreksinhoud zonder lidmaatschap.
+  const canReadGroup = !!group && (group.is_private || member);
   let messages = [];
-  if (group) {
+  if (canReadGroup) {
     const {data:messageRows,error:messageError} = await sb.from('messages')
       .select('id,user_id,content,created_at').eq('group_id',room).order('created_at').limit(100);
     if (messageError) throw messageError;
@@ -2480,7 +2484,6 @@ async function chat() {
   }
   const names = await profilesFor(messages.map(m => m.user_id));
   const chatPolls = await pollsFor('message',messages.map(m => m.id));
-  const member = room ? joined.has(room) : false;
   let privateParticipantsHtml = '';
   if (group?.is_private) {
     const {data: participantRows, error: participantError} = await sb.from('group_members')
@@ -2499,13 +2502,13 @@ async function chat() {
     <button class="btn ${privateChatArchivedView ? '' : 'light'}" onclick="setPrivateChatArchivedView(true)">Gearchiveerd <span class="tag">${privateGroups.filter(g => archivedGroupIds.has(g.id)).length}</span></button>
   </div>` : '';
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + privateViewTabs + `<div class="chat">
-    <div class="rooms">${visibleGroups.map(g => `<div style="margin-bottom:6px"><button style="width:100%;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button></div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
+    <div class="rooms">${visibleGroups.map(g => `<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><button style="flex:1;min-width:0;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? '✓ Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button>${!g.is_private && !joined.has(g.id) ? `<button type="button" class="btn light" style="white-space:nowrap;padding:8px 11px;font-size:12px" onclick="joinGroup('${g.id}')">Lid worden</button>` : ''}</div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
     <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : (member ? `<button class="btn light" style="float:right" onclick="leaveChatGroup('${group.id}')">Groep verlaten</button>` : '')}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
-      <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${chatPolls[m.id] || ''}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
-      ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div><div style="width:100%"><button type="button" class="btn light" onclick="togglePollFields('chatPollFields')">📊 Poll toevoegen</button><div id="chatPollFields" class="bc-poll-fields hidden"><input id="chatPollQuestion" placeholder="Pollvraag"><textarea id="chatPollOptions" rows="3" placeholder="Optie 1&#10;Optie 2"></textarea><small class="muted">2 tot 6 antwoordopties, elk op een nieuwe regel.</small></div></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
+      ${group && !canReadGroup ? `<div class="msgs" style="display:flex;align-items:center;justify-content:center;text-align:center;min-height:220px;padding:18px;box-sizing:border-box"><div style="max-width:360px;background:#f8f6ef;border:1px solid #e4dfd1;border-radius:16px;padding:22px;box-shadow:0 8px 24px rgba(38,61,48,.08)"><div class="bc-confirm-mark" style="margin:0 auto 13px">🔒</div><b style="display:block;font:22px Georgia;color:#263d30;margin-bottom:8px">Je bent nog geen lid</b><p class="muted" style="line-height:1.55;margin:0 0 16px">Je bekijkt <strong>${esc(displayGroupName(group))}</strong>. De berichten en gesprekken zijn alleen zichtbaar voor groepsleden. Word lid om mee te lezen en zelf berichten te plaatsen.</p><button class="btn" onclick="joinGroup('${group.id}')">Lid worden van deze groep</button></div></div>` : `<div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${chatPolls[m.id] || ''}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>`}
+      ${group && canReadGroup && (member || group.is_private) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div><div style="width:100%"><button type="button" class="btn light" onclick="togglePollFields('chatPollFields')">📊 Poll toevoegen</button><div id="chatPollFields" class="bc-poll-fields hidden"><input id="chatPollQuestion" placeholder="Pollvraag"><textarea id="chatPollOptions" rows="3" placeholder="Optie 1&#10;Optie 2"></textarea><small class="muted">2 tot 6 antwoordopties, elk op een nieuwe regel.</small></div></div></div>` : ''}
     </div></div>`;
   setTimeout(() => { const el = $('msgs'); if (el) el.scrollTop = el.scrollHeight; },0);
-  if (group) chatChannel = sb.channel('basecamp-chat-' + room)
+  if (group && canReadGroup) chatChannel = sb.channel('basecamp-chat-' + room)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'group_id=eq.' + room},() => { if (page === 'community' && communityMode === 'chats') render(); }).subscribe();
   return html;
 }
@@ -2564,6 +2567,29 @@ async function sendDirectMessage() {
     alert('Bericht versturen lukte niet: ' + (error.message || error));
     if (button) button.disabled = false;
   }
+}
+
+function basecampInfoModal(title, description, mark = 'ℹ') {
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'bc-confirm-backdrop';
+    const dialog = document.createElement('div');
+    dialog.className = 'bc-confirm';
+    dialog.setAttribute('role','dialog');
+    dialog.setAttribute('aria-modal','true');
+    dialog.innerHTML = `<div class="bc-confirm-mark"></div><h3></h3><p></p><div class="bc-confirm-actions"><button type="button" class="btn" data-choice="ok">Begrepen</button></div>`;
+    dialog.querySelector('.bc-confirm-mark').textContent = mark;
+    dialog.querySelector('h3').textContent = title;
+    dialog.querySelector('p').textContent = description;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    const finish = () => { document.removeEventListener('keydown',onKey); backdrop.remove(); resolve(); };
+    dialog.querySelector('[data-choice="ok"]').addEventListener('click',finish);
+    backdrop.addEventListener('click',event => { if (event.target === backdrop) finish(); });
+    const onKey = event => { if (event.key === 'Escape') finish(); };
+    document.addEventListener('keydown',onKey);
+    dialog.querySelector('[data-choice="ok"]').focus();
+  });
 }
 
 function confirmChatDelete(title, description) {
@@ -2677,14 +2703,19 @@ async function selectRoom(id) {
 }
 
 async function joinGroup(group_id) {
-  const {error} = await sb.from('group_members').insert({
-    group_id,
-    user_id:me.id
-  });
-
-  if (error && error.code !== '23505') {
-    alert(error.message);
+  const {data:group,error:groupError} = await sb.from('groups')
+    .select('id,name,is_private').eq('id',group_id).maybeSingle();
+  if (groupError || !group) { await basecampInfoModal('Chatgroep niet gevonden','Deze chatgroep kon niet worden geladen. Vernieuw BASECAMP en probeer het opnieuw.'); return; }
+  if (group.is_private) { await basecampInfoModal('Privéreischat','Deze chatgroep hoort bij een reis. Deelnemers en gidsen krijgen automatisch toegang; je kunt niet zelf lid worden.','🔒'); return; }
+  const {data:existing,error:checkError} = await sb.from('group_members')
+    .select('group_id').eq('group_id',group_id).eq('user_id',me.id).maybeSingle();
+  if (checkError) { await basecampInfoModal('Lidmaatschap controleren lukte niet','Probeer het opnieuw. Details: '+checkError.message,'⚠'); return; }
+  if (existing) { await render(); return; }
+  const {error} = await sb.from('group_members').insert({group_id,user_id:me.id});
+  if (error) {
+    await basecampInfoModal('Lid worden lukte niet','BASECAMP kon je niet aan deze chatgroep toevoegen. Probeer het opnieuw. Details: '+error.message,'⚠');
   } else {
+    room = group_id;
     await render();
   }
 }
@@ -2718,6 +2749,13 @@ async function deleteChatMessage(message_id) {
 
 async function sendMessage() {
   if (!room) return;
+  const {data:membership,error:membershipError} = await sb.from('group_members')
+    .select('group_id').eq('group_id',room).eq('user_id',me.id).maybeSingle();
+  if (membershipError || !membership) {
+    await basecampInfoModal('Je bent geen lid van deze chatgroep','Je kunt de berichten pas bekijken of versturen nadat je lid bent geworden. Gebruik de knop ‘Lid worden’ bij de groep.','🔒');
+    await render();
+    return;
+  }
   const input = $('chatText');
   let paths = [];
   try {
