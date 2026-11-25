@@ -1220,7 +1220,7 @@ async function editCommunityComment(id) {
 }
 
 async function deleteCommunityPost(post_id) {
-  if (!confirm('Wil je dit communitybericht definitief verwijderen?')) return;
+  if (!await confirmChatDelete('Communitybericht verwijderen?', 'Dit bericht wordt definitief uit de community verwijderd. Deze actie kun je niet ongedaan maken.')) return;
 
   const {error} = await sb.from('posts').delete()
     .eq('id', post_id)
@@ -1234,7 +1234,7 @@ async function deleteCommunityPost(post_id) {
 }
 
 async function deleteCommunityComment(comment_id) {
-  if (!confirm('Wil je deze reactie definitief verwijderen?')) return;
+  if (!await confirmChatDelete('Reactie verwijderen?', 'Deze reactie wordt definitief uit de community verwijderd. Deze actie kun je niet ongedaan maken.')) return;
 
   const {error} = await sb.from('comments').delete()
     .eq('id', comment_id)
@@ -2233,7 +2233,7 @@ async function sendTripDiscussion() {
 }
 
 async function deleteTripDiscussion(id) {
-  if (!confirm('Wil je dit bericht verwijderen?')) return;
+  if (!await confirmChatDelete('Reisvraag verwijderen?', 'Dit bericht wordt definitief uit de reisvragen verwijderd. Deze actie kun je niet ongedaan maken.')) return;
 
   const {error} = await sb.from('trip_discussions').delete().eq('id', id);
 
