@@ -346,6 +346,7 @@ const ADVENTURE_INTERESTS = ['Trekking','Packraften','Expedities','Bergsport','M
 let bucketlistView = 'wishlist';
 let editingBucketItemId = null;
 let adminSection = 'overview';
+let adminTripTab = 'upcoming';
 let adminMemberPage = 0;
 let adminMemberSearch = '';
 let notificationRefreshTimer = null;
@@ -3237,6 +3238,12 @@ function adminMenu(active) {
 async function setAdminSection(next) {
   adminSection = next;
   if (next !== 'members') { adminMemberPage = 0; adminMemberSearch = ''; }
+  if (next === 'trips') adminTripTab = 'upcoming';
+  await render();
+}
+
+async function setAdminTripTab(next) {
+  adminTripTab = next;
   await render();
 }
 
@@ -3492,7 +3499,8 @@ async function admin() {
     const today = new Date().toISOString().slice(0,10);
     const drafts = (trips||[]).filter(t=>t.status==='draft');
     const upcoming = (trips||[]).filter(t=>t.status==='published' && (!t.end_date || t.end_date>=today));
-    const past = (trips||[]).filter(t=>t.status==='completed' || (t.status==='published' && t.end_date && t.end_date<today));
+    const past = (trips||[]).filter(t=>t.status==='published' && t.end_date && t.end_date<today);
+    const archived = (trips||[]).filter(t=>t.status==='completed');
     const renderTrip = t => {
       const people=(interests||[]).filter(i=>i.trip_id===t.id && names[i.user_id]?.status==='approved');
       const confirmed=(participants||[]).filter(x=>x.trip_id===t.id);
@@ -3533,11 +3541,18 @@ async function admin() {
       <button class="btn" style="background:#8b493d;margin-top:10px;margin-left:6px" onclick="deleteTripPermanently('${t.id}')">Definitief verwijderen</button>
       </div>`;
     };
-    const sections = [['Gepland',upcoming],['Afgelopen / gearchiveerd',past],['Concepten',drafts]];
+    const sections = [
+      ['upcoming','Gepland',upcoming],
+      ['past','Afgelopen',past],
+      ['archived','Gearchiveerd',archived],
+      ['drafts','Concepten',drafts]
+    ];
     const memberResult = await sb.from('profiles').select('id,display_name').eq('status','approved').order('display_name').limit(500);
     if (memberResult.error) throw memberResult.error;
     const memberOptions = (memberResult.data||[]).map(u=>`<option value="${u.id}">${esc(u.display_name||'Avonturier')}</option>`).join('');
-    return header + `${sections.map(([label,list])=>`<div class="card"><h3>${label} <span class="tag">${list.length}</span></h3>${list.map(renderTrip).join('')||'<p class="muted">Geen reizen in deze categorie.</p>'}</div>`).join('')}
+    const activeTab = sections.find(([key])=>key===adminTripTab) || sections[0];
+    const tabs = sections.map(([key,label,list])=>`<button class="btn ${adminTripTab===key?'':'light'}" onclick="setAdminTripTab('${key}')">${label} <span class="tag">${list.length}</span></button>`).join('');
+    return header + `<div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 16px">${tabs}</div><div class="card"><h3>${activeTab[1]} <span class="tag">${activeTab[2].length}</span></h3>${activeTab[2].map(renderTrip).join('')||'<p class="muted">Geen reizen in deze categorie.</p>'}</div>
       <div class="card"><h3>Reis toevoegen</h3>
         <input id="tn" placeholder="Naam reis">
         <input id="tdest" placeholder="Bestemming" style="margin:8px 0">
