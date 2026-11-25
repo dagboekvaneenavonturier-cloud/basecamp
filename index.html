@@ -1817,17 +1817,29 @@ async function tripDiscussion() {
 
 
 
-function communityNotificationPreview(post) {
-  const raw = String(post?.content || '').trim();
-  // Verwijder volledige afbeeldings-/opslag-URL's, ook wanneer ze achter gewone tekst staan.
-  const containsStorageUrl = /https?:\/\/[^\s]+(?:supabase\.co\/storage|storage\/v1\/object|post-images)[^\s]*/i.test(raw);
+function cleanNotificationText(value) {
+  const raw = String(value || '').trim();
+  const hasMediaReference = /(?:https?:\/\/[^\s<>()]+|post-images\/[^^\s<>()]+|storage\/v1\/object[^\s<>()]*|\.(?:jpe?g|png|gif|webp|mp4|webm|mov)(?:[?#][^\s<>()]*)?)/i.test(raw);
   const cleaned = raw
+    // Verwijder HTML-media, Markdown-afbeeldingen en Markdown-links.
+    .replace(/<img\b[^>]*>/gi, '')
     .replace(/!?\[[^\]]*\]\(https?:\/\/[^\s)]+\)/gi, '')
+    .replace(/!?\[[^\]]*\]\(\s*[^)]+\)/gi, '')
+    // Verwijder ook kale URL's, Supabase-opslagpaden en afbeeldingsbestandsnamen.
     .replace(/https?:\/\/[^\s<>()]+/gi, '')
+    .replace(/(?:[\w.-]+\.supabase\.co\/)?storage\/v1\/object[^\s<>()]*/gi, '')
+    .replace(/(?:^|\s)post-images\/[^\s<>()]+/gi, ' ')
+    .replace(/[^\s<>()]+\.(?:jpe?g|png|gif|webp|mp4|webm|mov)(?:[?#][^\s<>()]*)?/gi, '')
+    .replace(/[\[\]{}"']+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[\s|·,;:–—-]+$/g, '')
     .trim();
-  const hasImage = Boolean(post?.image_url) || containsStorageUrl;
+  return {cleaned, hasMediaReference};
+}
+
+function communityNotificationPreview(post) {
+  const {cleaned, hasMediaReference} = cleanNotificationText(post?.content);
+  const hasImage = Boolean(post?.image_url) || hasMediaReference;
   if (!cleaned) return hasImage ? 'Afbeelding' : 'Communitybericht';
   return cleaned + (hasImage ? ' · Afbeelding' : '');
 }
@@ -1991,7 +2003,7 @@ async function notifications() {
               </div>
               <p>Reageerde op jouw bericht:</p>
               <p class="muted">${esc(communityNotificationPreview(post))}</p>
-              <p>${esc(comment.content)}</p>
+              <p>${esc(cleanNotificationText(comment.content).cleaned || (cleanNotificationText(comment.content).hasMediaReference ? 'Afbeelding' : 'Reactie zonder tekst'))}</p>
               <button class="btn light"
                 onclick="openPostNotification('${n.id}','${n.post_id}')">
                 Bekijk bericht →
