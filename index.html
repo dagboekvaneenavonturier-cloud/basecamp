@@ -3065,7 +3065,7 @@ async function memberProfile() {
       ${(person.adventure_interests||[]).length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0">${person.adventure_interests.map(v=>`<span class="tag">${esc(v)}</span>`).join('')}</div>`:''}
       <span class="tag">${patches.length} verzamelde ${patches.length === 1 ? 'patch' : 'patches'}</span></div>
       <div style="margin-top:22px">${section('REISGESCHIEDENIS','Avonturenpatches','Reizen waaraan deze persoon daadwerkelijk heeft deelgenomen.')}
-      <div class="card">${patchesHtml(patches)}</div></div>
+      <div class="card"><div class="tag" style="display:inline-flex;margin:0 0 14px">🏅 ${patches.length} ${patches.length === 1 ? 'verzamelde patch' : 'verzamelde patches'}</div>${patchesHtml(patches)}</div></div>
       ${person.bucketlist_public ? `<div style="margin-top:22px">${section('DROMEN & PLANNEN','Avonturenbucketlist','De dromen en avonturen die deze avonturier graag wil beleven of al heeft beleefd.')}
         <div class="card">
           <div class="bucket-tabs"><span class="tag">♡ Dromen: ${publicBucketItems.filter(x=>!x.completed).length}</span><span class="tag">✓ Beleefd: ${publicBucketItems.filter(x=>x.completed).length}</span></div>
