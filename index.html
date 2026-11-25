@@ -1939,7 +1939,7 @@ async function notifications() {
       {data: comments, error: commentsError}
     ] = await Promise.all([
       sb.from('posts')
-        .select('id,content')
+        .select('id,content,image_url')
         .in('id', postIds),
       sb.from('comments')
         .select('id,content,user_id')
@@ -1975,7 +1975,7 @@ async function notifications() {
                 <span class="badge">Nieuw</span>
               </div>
               <p>Reageerde op jouw bericht:</p>
-              <p class="muted">${esc(post.content || 'Communitybericht')}</p>
+              <p class="muted">${esc((post.content || '').trim() && !/^https?:\/\//i.test((post.content || '').trim()) ? post.content : (post.image_url ? 'Afbeelding' : 'Communitybericht'))}${post.image_url ? ' · Afbeelding' : ''}</p>
               <p>${esc(comment.content)}</p>
               <button class="btn light"
                 onclick="openPostNotification('${n.id}','${n.post_id}')">
@@ -2439,7 +2439,7 @@ async function chat() {
   </div>` : '';
   const html = section('PRAAT MEE','Groepen & chat','Kies een onderwerp en praat mee met andere avonturiers.') + tabHtml + privateViewTabs + `<div class="chat">
     <div class="rooms">${visibleGroups.map(g => `<div style="margin-bottom:6px"><button style="width:100%;text-align:left" class="${g.id === room ? 'active' : ''}" onclick="selectRoom('${g.id}')"><b>${esc(displayGroupName(g))}</b><br><small>${g.is_private ? '🔒 Privéreischat' : (joined.has(g.id) ? 'Lid' : 'Open groep')} · ${groupMemberCounts[g.id] || 0} ${(groupMemberCounts[g.id] || 0) === 1 ? 'deelnemer' : 'deelnemers'}</small></button></div>`).join('') || `<p class="muted" style="padding:8px">${chatCategory === 'private' ? (privateChatArchivedView ? 'Je hebt nog geen gearchiveerde reischats.' : 'Geen actieve privéreischats.') : 'Nog geen chats in deze categorie.'}</p>`}</div>
-    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : ''}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
+    <div class="chatmain">${group ? `<div style="padding:13px;border-bottom:1px solid var(--line);font-weight:700">${esc(displayGroupName(group))}${group.is_private ? ' · 🔒 Privéreischat' : ''}${group.is_private ? `<button class="btn light" style="float:right" onclick="${privateChatArchivedView ? 'restorePrivateChat' : 'archivePrivateChat'}('${group.id}')">${privateChatArchivedView ? 'Terugzetten' : 'Archiveren'}</button>` : (member ? `<button class="btn light" style="float:right" onclick="leaveChatGroup('${group.id}')">Groep verlaten</button>` : '')}</div>${privateParticipantsHtml}` : '<div style="padding:20px" class="muted">Nog geen chats in deze categorie.</div>'}
       <div class="msgs" id="msgs">${messages.map(m => `<div class="bubble ${m.user_id === me.id ? 'mine' : ''}">${profileIdentity(names[m.user_id],m.user_id)}<br><small class="muted">${new Date(m.created_at).toLocaleString('nl-BE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</small><br>${messageContentHtml(m.content)}${chatPolls[m.id] || ''}${(m.user_id === me.id || ['admin','moderator'].includes(me.role)) ? `<br>${m.user_id === me.id ? `<button class="message-delete" onclick="editChatMessage('${m.id}')">Bewerken</button> ` : ''}<button class="message-delete" onclick="deleteChatMessage('${m.id}')">Verwijderen</button>` : ''}</div>`).join('')}</div>
       ${group && (member || ['admin','moderator'].includes(me.role)) ? `<div class="send"><input class="send-text" id="chatText" placeholder="Schrijf een bericht..." onkeydown="if(event.key==='Enter')sendMessage()"><div class="send-tools"><label class="btn light" for="chatImages">▧ Foto/video</label><input id="chatImages" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onchange="previewChatImages('chatImages','chatPhotoPreviews')"><button class="btn" onclick="sendMessage()">Verstuur</button></div><div id="chatPhotoPreviews" class="photo-previews" style="width:100%"></div><div style="width:100%"><button type="button" class="btn light" onclick="togglePollFields('chatPollFields')">📊 Poll toevoegen</button><div id="chatPollFields" class="bc-poll-fields hidden"><input id="chatPollQuestion" placeholder="Pollvraag"><textarea id="chatPollOptions" rows="3" placeholder="Optie 1&#10;Optie 2"></textarea><small class="muted">2 tot 6 antwoordopties, elk op een nieuwe regel.</small></div></div></div>` : group ? `<div class="send"><button class="btn" onclick="joinGroup('${room}')">Aansluiten bij deze groep</button></div>` : ''}
     </div></div>`;
@@ -2628,6 +2628,19 @@ async function joinGroup(group_id) {
   }
 }
 
+async function leaveChatGroup(groupId) {
+  const {data:group,error:groupError} = await sb.from('groups')
+    .select('id,name,is_private').eq('id',groupId).maybeSingle();
+  if (groupError) { alert('De chatgroep kon niet worden gecontroleerd: ' + groupError.message); return; }
+  if (!group || group.is_private) { alert('Je kunt een privéreischat niet verlaten.'); return; }
+  if (!confirm(`Wil je de gewone chatgroep “${group.name}” verlaten? Je kunt later opnieuw aansluiten.`)) return;
+  const {error} = await sb.from('group_members').delete()
+    .eq('group_id',groupId).eq('user_id',me.id);
+  if (error) { alert('De chatgroep verlaten lukte niet: ' + error.message); return; }
+  room = null;
+  await render();
+}
+
 async function deleteChatMessage(message_id) {
   if (!await confirmChatDelete('Bericht verwijderen?', 'Dit chatbericht wordt definitief verwijderd voor de deelnemers van deze chat. Deze actie kun je niet ongedaan maken.')) return;
 
@@ -2813,6 +2826,7 @@ async function profile() {
     + `<div class="card">
       ${avatarMarkup(me.avatar_url, me.display_name, 'profile-avatar')}
       <div class="identity-meta" style="margin:0 0 12px">${me.is_guide ? '<span class="identity-role">GIDS</span>' : ''}${communityRank(patches.length) ? `<span class="identity-rank">${esc(communityRank(patches.length))}</span>` : ''}</div>
+      <div class="tag" style="display:inline-flex;margin:0 0 12px">🏅 ${patches.length} ${patches.length === 1 ? 'verzamelde patch' : 'verzamelde patches'}</div>
       <div class="field"><label for="pphoto">Profielfoto</label><input id="pphoto" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">Kies een JPG-, PNG- of WEBP-foto van maximaal 5 MB. Je kunt later een andere foto uploaden.</small></div>
       <div class="field"><label for="pname">Naam</label><input id="pname" value="${esc(me.display_name || '')}"></div>
       <div class="field"><label for="pbio">Over mij</label><textarea id="pbio">${esc(me.bio || '')}</textarea></div>
