@@ -1327,7 +1327,7 @@ async function showCompassResults() {
   if (button) { button.disabled = true; button.textContent = 'Je kompas wordt berekend…'; }
   try {
     const [{data:trips,error:tripError},{data:profiles,error:profileError},{data:myInterestRows,error:myInterestError}] = await Promise.all([
-      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url,website_url').eq('status','published').order('start_date'),
+      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url,website_url').eq('status','published').not('start_date','is',null).gte('start_date',localDateISO()).order('start_date'),
       sb.from('adventure_compass_profiles').select('*'),
       sb.from('trip_interests').select('trip_id').eq('user_id',me.id)
     ]);
@@ -1454,190 +1454,90 @@ async function discover() {
 }
 
 async function myAdventures(includeHeading = true) {
-  // Reizen waarin dit lid interesse heeft getoond.
-  const {data: interestRows, error: interestError} = await sb
-    .from('trip_interests')
-    .select('trip_id')
-    .eq('user_id', me.id);
+  const [{data:interestRows,error:interestError},{data:myParticipantRows,error:myParticipantError},{data:discussionRows,error:discussionError},{data:guideRows,error:guideError},{data:archiveRows,error:archiveError}] = await Promise.all([
+    sb.from('trip_interests').select('trip_id').eq('user_id',me.id),
+    sb.from('trip_participants').select('trip_id').eq('user_id',me.id),
+    sb.from('trip_discussions').select('trip_id,created_at').eq('user_id',me.id).order('created_at',{ascending:false}),
+    sb.from('trip_guides').select('trip_id').eq('guide_user_id',me.id),
+    sb.from('trip_user_archives').select('trip_id').eq('user_id',me.id)
+  ]);
+  for (const error of [interestError,myParticipantError,discussionError,guideError,archiveError]) if (error) throw error;
 
-  if (interestError) throw interestError;
-
-  const interestedIds = [...new Set((interestRows || []).map(x => x.trip_id).filter(Boolean))];
-
-  const {data:myParticipantRows,error:myParticipantError} = await sb
-    .from('trip_participants')
-    .select('trip_id')
-    .eq('user_id',me.id);
-  if (myParticipantError) throw myParticipantError;
-  const participatedIds = [...new Set((myParticipantRows || []).map(x => x.trip_id).filter(Boolean))];
-
-  // Reizen waar dit lid zelf een bericht in de reisdiscussie heeft geplaatst.
-  const {data: discussionRows, error: discussionError} = await sb
-    .from('trip_discussions')
-    .select('trip_id,created_at')
-    .eq('user_id', me.id)
-    .order('created_at', {ascending:false});
-
-  if (discussionError) throw discussionError;
-
-  const discussedIds = [...new Set((discussionRows || []).map(x => x.trip_id).filter(Boolean))];
-  const allTripIds = [...new Set([...interestedIds, ...discussedIds, ...participatedIds])];
-
-  let tripMap = {};
-  if (allTripIds.length) {
-    const {data: tripRows, error: tripsError} = await sb
-      .from('trips')
-      .select('id,title,destination,start_date,end_date,status,image_url,patch_image_url')
-      .in('id', allTripIds);
-
-    if (tripsError) throw tripsError;
-    tripMap = Object.fromEntries((tripRows || []).map(t => [t.id, t]));
+  const interestedIds=[...new Set((interestRows||[]).map(x=>x.trip_id).filter(Boolean))];
+  const participatedIds=[...new Set((myParticipantRows||[]).map(x=>x.trip_id).filter(Boolean))];
+  const discussedIds=[...new Set((discussionRows||[]).map(x=>x.trip_id).filter(Boolean))];
+  const guidedIds=[...new Set((guideRows||[]).map(x=>x.trip_id).filter(Boolean))];
+  const archivedIds=new Set((archiveRows||[]).map(x=>x.trip_id));
+  const allTripIds=[...new Set([...interestedIds,...discussedIds,...participatedIds,...guidedIds])];
+  let tripMap={};
+  if(allTripIds.length){
+    const {data:tripRows,error}=await sb.from('trips').select('id,title,destination,start_date,end_date,status,image_url,patch_image_url').in('id',allTripIds);
+    if(error) throw error;
+    tripMap=Object.fromEntries((tripRows||[]).map(t=>[t.id,t]));
   }
 
-  // Groepen waarvan het lid deel uitmaakt.
-  const {data: membershipRows, error: membershipError} = await sb
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', me.id);
-
-  if (membershipError) throw membershipError;
-
-  const groupIds = [...new Set((membershipRows || []).map(x => x.group_id).filter(Boolean))];
-  let groups = [];
-  if (groupIds.length) {
-    const {data: groupRows, error: groupsError} = await sb
-      .from('groups')
-      .select('id,name,description,is_private,trip_id')
-      .in('id', groupIds)
-      .order('name');
-
-    if (groupsError) throw groupsError;
-    groups = groupRows || [];
+  const {data:membershipRows,error:membershipError}=await sb.from('group_members').select('group_id').eq('user_id',me.id);
+  if(membershipError) throw membershipError;
+  const groupIds=[...new Set((membershipRows||[]).map(x=>x.group_id).filter(Boolean))];
+  let groups=[];
+  if(groupIds.length){
+    const {data:groupRows,error}=await sb.from('groups').select('id,name,description,is_private,trip_id').in('id',groupIds).order('name');
+    if(error) throw error;
+    groups=groupRows||[];
   }
-
-  // Privéreischats die bij de bevestigde reizen van dit lid horen.
-  const privateTripGroups = Object.fromEntries(
-    (groups || []).filter(g => g.is_private && g.trip_id).map(g => [g.trip_id, g])
-  );
-
-  const interestedTrips = interestedIds
-    .map(id => tripMap[id])
-    .filter(t => t && t.status === 'published')
-    .sort((a,b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
-
-  const discussedTrips = discussedIds
-    .map(id => tripMap[id])
-    .filter(t => t && t.status === 'published' && !interestedIds.includes(t.id));
-
-  const participatedTrips = participatedIds
-    .map(id => tripMap[id])
-    .filter(Boolean);
-  const completedParticipatedTrips = participatedTrips.filter(t => tripHasEnded(t));
-
-  const dateLabel = t => {
-    if (!t.start_date && !t.end_date) return 'Datum volgt';
-    const start = t.start_date
-      ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE')
-      : '';
-    const end = t.end_date
-      ? new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE')
-      : '';
-    return start + (end ? ' – ' + end : '');
+  const privateTripGroups=Object.fromEntries(groups.filter(g=>g.is_private&&g.trip_id).map(g=>[g.trip_id,g]));
+  const isPlanned=t=>Boolean(t && t.start_date && t.start_date>=localDateISO() && !archivedIds.has(t.id));
+  const isPast=t=>Boolean(t && tripHasEnded(t));
+  const interestedTrips=interestedIds.map(id=>tripMap[id]).filter(t=>t&&t.status==='published'&&isPlanned(t)).sort((a,b)=>String(a.start_date||'').localeCompare(String(b.start_date||'')));
+  const discussedTrips=discussedIds.map(id=>tripMap[id]).filter(t=>t&&t.status==='published'&&!interestedIds.includes(t.id)&&isPlanned(t));
+  const participatedTrips=participatedIds.map(id=>tripMap[id]).filter(t=>t&&isPlanned(t));
+  const guidedTrips=guidedIds.map(id=>tripMap[id]).filter(t=>t&&isPlanned(t));
+  const pastTrips=[...new Map(allTripIds.map(id=>tripMap[id]).filter(isPast).filter(t=>archivedIds.has(t.id)).map(t=>[t.id,t])).values()].sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')));
+  const unarchivedPastTrips=[...new Map(allTripIds.map(id=>tripMap[id]).filter(isPast).filter(t=>!archivedIds.has(t.id)).map(t=>[t.id,t])).values()].sort((a,b)=>String(b.end_date||'').localeCompare(String(a.end_date||'')));
+  const completedParticipatedTrips=participatedIds.map(id=>tripMap[id]).filter(t=>t&&isPast(t));
+  const dateLabel=t=>{
+    if(!t.start_date&&!t.end_date) return 'Datum volgt';
+    const a=t.start_date?new Date(t.start_date+'T12:00:00').toLocaleDateString('nl-BE'):'';
+    const b=t.end_date?new Date(t.end_date+'T12:00:00').toLocaleDateString('nl-BE'):'';
+    return a+(b?' – '+b:'');
+  };
+  const tripCard=(t,label,buttonText,archiveAction='')=>{
+    const participant=participatedIds.includes(t.id);
+    const privateGroup=privateTripGroups[t.id];
+    const chatButton=participant?(privateGroup?`<button class="btn light" onclick="openPrivateTripChat('${privateGroup.id}')">Open reischat →</button>`:'<p class="muted" style="margin:8px 0">De privéreischat wordt klaargemaakt.</p>'):`<button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>`;
+    return `<article class="card">${t.image_url?`<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">`:''}<span class="tag">${esc(label)}</span><h3>${esc(t.title)}</h3><p class="muted">${esc(t.destination||'Bestemming volgt')} · ${esc(dateLabel(t))}</p>${chatButton}${participant&&!tripHasEnded(t)?`<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>`:''}${archiveAction?`<button class="btn light" style="margin-top:7px" onclick="${archiveAction}('${t.id}')">${archiveAction==='archiveMyTrip'?'Archiveren':'Terugzetten'}</button>`:''}</article>`;
   };
 
-  const tripCard = (t, label, buttonText) => {
-    const isConfirmedParticipant = participatedIds.includes(t.id);
-    const privateGroup = privateTripGroups[t.id];
-    const chatButton = isConfirmedParticipant
-      ? (privateGroup
-          ? `<button class="btn light" onclick="openPrivateTripChat('${privateGroup.id}')">Open reischat →</button>`
-          : '<p class="muted" style="margin:8px 0">De privéreischat wordt klaargemaakt.</p>')
-      : `<button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>`;
-
-    return `
-      <article class="card">
-        ${t.image_url ? `<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">` : ''}
-        <span class="tag">${esc(label)}</span>
-        <h3>${esc(t.title)}</h3>
-        <p class="muted">${esc(t.destination || 'Bestemming volgt')} · ${esc(dateLabel(t))}</p>
-        ${chatButton}
-        ${isConfirmedParticipant && !tripHasEnded(t) ? `<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>` : ''}
-      </article>
-    `;
-  };
-
-  return (includeHeading ? section(
-    'JOUW BASECAMP',
-    'Mijn avonturen',
-    'Alles wat je bij BASECAMP volgt, op één plek.'
-  ) : '') + `
+  return (includeHeading?section('JOUW BASECAMP','Mijn avonturen','Alles wat je bij BASECAMP volgt, op één plek.'):'')+`
     <div class="grid">
-      <div class="card">
-        <div class="eyebrow">REISINTERESSES</div>
-        <h3>${interestedTrips.length}</h3>
-        <p class="muted">Reizen die je volgt</p>
-      </div>
-      <div class="card">
-        <div class="eyebrow">MEE OP AVONTUUR</div>
-        <h3>${participatedTrips.length}</h3>
-        <p class="muted">Reizen waaraan je deelnam</p>
-      </div>
-      <div class="card">
-        <div class="eyebrow">CHATGROEPEN</div>
-        <h3>${groups.length}</h3>
-        <p class="muted">Groepen waarvan je lid bent</p>
-      </div>
-      <div class="card">
-        <div class="eyebrow">REISGESPREKKEN</div>
-        <h3>${discussedIds.length}</h3>
-        <p class="muted">Reisdiscussies waarin je zelf iets hebt geplaatst</p>
-      </div>
+      <div class="card"><div class="eyebrow">GEPLANDE BOEKINGEN</div><h3>${participatedTrips.length}</h3><p class="muted">Reizen waaraan je deelneemt</p></div>
+      <div class="card"><div class="eyebrow">ALS GIDS</div><h3>${guidedTrips.length}</h3><p class="muted">Reizen die je begeleidt</p></div>
+      <div class="card"><div class="eyebrow">CHATGROEPEN</div><h3>${groups.length}</h3><p class="muted">Groepen waarvan je lid bent</p></div>
+      <div class="card"><div class="eyebrow">REISGESPREKKEN</div><h3>${discussedTrips.length}</h3><p class="muted">Geplande reizen waarin je iets hebt geplaatst</p></div>
     </div>
-
-    <div style="margin-top:24px">
-      ${section('JOUW VERZAMELING','Avonturenpatches',`${completedParticipatedTrips.length} ${completedParticipatedTrips.length === 1 ? 'avontuur' : 'avonturen'} beleefd`)}
-      <div class="card">${patchesHtml(completedParticipatedTrips)}</div>
-    </div>
-
-    <div style="margin-top:24px">
-      ${section('JOUW BOEKINGEN','Mijn geboekte reizen','Open je persoonlijke reisomgeving met alle praktische informatie en voorbereiding.')}
-      <div class="grid">
-        ${participatedTrips.map(t => tripCard(t, 'Bevestigde deelname', 'Open reischat →')).join('') ||
-          '<div class="card"><p class="muted">Je hebt nog geen bevestigde boekingen.</p></div>'}
-      </div>
-    </div>
-
-    <div style="margin-top:24px">
-      ${section('OP JOUW RADAR','Reizen waarin je interesse hebt','Je kunt hier verder praten over de reizen die je volgt.')}
-      <div class="grid">
-        ${interestedTrips.map(t => tripCard(t, 'Je hebt interesse', 'Open reisgesprek →')).join('') ||
-          '<div class="card"><p class="muted">Je hebt nog geen interesse getoond in een reis.</p><button class="btn" onclick="go(&#39;discover&#39;)">Ontdek reizen</button></div>'}
-      </div>
-    </div>
-
-    <div style="margin-top:24px">
-      ${section('JOUW BIJDRAGEN','Reisgesprekken','Reizen waarover je zelf al een vraag of bericht hebt geplaatst.')}
-      <div class="grid">
-        ${discussedTrips.map(t => tripCard(t, 'Je nam deel aan het gesprek', 'Verder praten →')).join('') ||
-          '<div class="card"><p class="muted">Je hebt nog geen berichten geplaatst in reisgesprekken.</p><button class="btn light" onclick="go(&#39;discover&#39;)">Bekijk de reizen</button></div>'}
-      </div>
-    </div>
-
-    <div style="margin-top:24px">
-      ${section('SAMEN OP PAD','Mijn chatgroepen','De groepen waar je deel van uitmaakt.')}
-      <div class="card">
-        ${groups.map(g => `
-          <div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)">
-            <div><b>${esc(g.name)}</b><div class="muted">${esc(g.description || '')}</div></div>
-            <button class="btn light" onclick="room='${g.id}';go('chat')">Open chat</button>
-          </div>
-        `).join('') || '<p class="muted">Je bent nog geen lid van een chatgroep.</p>'}
-        <button class="btn light" style="margin-top:12px" onclick="go('chat')">Bekijk alle chatgroepen</button>
-      </div>
-    </div>
-  `;
+    <div style="margin-top:24px">${section('JOUW VERZAMELING','Avonturenpatches',`${completedParticipatedTrips.length} ${completedParticipatedTrips.length===1?'avontuur':'avonturen'} beleefd`)}<div class="card">${patchesHtml(completedParticipatedTrips)}</div></div>
+    <div style="margin-top:24px">${section('JOUW BOEKINGEN','Mijn geplande reizen','Hier vind je je toekomstige boekingen en de reizen die je als gids begeleidt.')}<div class="grid">${[...participatedTrips.map(t=>tripCard(t,'Bevestigde deelname','Open reischat →')), ...guidedTrips.filter(t=>!participatedIds.includes(t.id)).map(t=>tripCard(t,'Je bent gids','Open reisgesprek →'))].join('')||'<div class="card"><p class="muted">Je hebt momenteel geen geplande reizen.</p></div>'}</div></div>
+    <div style="margin-top:24px">${section('OP JOUW RADAR','Reizen waarin je interesse hebt','Je kunt hier verder praten over de reizen die je volgt.')}<div class="grid">${interestedTrips.map(t=>tripCard(t,'Je hebt interesse','Open reisgesprek →')).join('')||'<div class="card"><p class="muted">Je volgt momenteel geen geplande reizen.</p><button class="btn" onclick="go(\'discover\')">Ontdek reizen</button></div>'}</div></div>
+    <div style="margin-top:24px">${section('JOUW BIJDRAGEN','Reisgesprekken','Reizen waarover je zelf al een vraag of bericht hebt geplaatst.')}<div class="grid">${discussedTrips.map(t=>tripCard(t,'Je nam deel aan het gesprek','Verder praten →')).join('')||'<div class="card"><p class="muted">Je hebt nog geen berichten geplaatst in gesprekken over geplande reizen.</p></div>'}</div></div>
+    <div style="margin-top:24px">${section('AFGERONDE REIZEN','Afgelopen reizen','Archiveer reizen die achter de rug zijn. Dit is alleen zichtbaar in jouw eigen profiel.')}<div class="grid">${unarchivedPastTrips.map(t=>tripCard(t, guidedIds.includes(t.id)?'Afgelopen · Gids':'Afgelopen','Open reisgesprek →','archiveMyTrip')).join('')||'<div class="card"><p class="muted">Er zijn geen niet-gearchiveerde afgelopen reizen.</p></div>'}</div></div>
+    <div style="margin-top:24px">${section('JOUW ARCHIEF','Gearchiveerde reizen','Alleen jij ziet welke reizen je hier hebt opgeborgen. Je kunt ze altijd terugzetten.')}<div class="grid">${pastTrips.map(t=>tripCard(t,'Gearchiveerd','Open reisgesprek →','restoreMyTrip')).join('')||'<div class="card"><p class="muted">Je reisarchief is nog leeg.</p></div>'}</div></div>
+    <div style="margin-top:24px">${section('SAMEN OP PAD','Mijn chatgroepen','De groepen waar je deel van uitmaakt.')}<div class="card">${groups.map(g=>`<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b>${esc(g.name)}</b><div class="muted">${esc(g.description||'')}</div></div><button class="btn light" onclick="room='${g.id}';go('chat')">Open chat</button></div>`).join('')||'<p class="muted">Je bent nog geen lid van een chatgroep.</p>'}<button class="btn light" style="margin-top:12px" onclick="go('chat')">Bekijk alle chatgroepen</button></div></div>`;
 }
 
+async function archiveMyTrip(tripId){
+  const {data:trip,error:tripError}=await sb.from('trips').select('id,end_date').eq('id',tripId).maybeSingle();
+  if(tripError) throw tripError;
+  if(!tripHasEnded(trip)) { alert('Alleen afgelopen reizen kunnen worden gearchiveerd.'); return; }
+  const {error}=await sb.from('trip_user_archives').upsert({user_id:me.id,trip_id:tripId},{onConflict:'user_id,trip_id'});
+  if(error){alert('Archiveren lukte niet: '+error.message);return;}
+  await render();
+}
+
+async function restoreMyTrip(tripId){
+  const {error}=await sb.from('trip_user_archives').delete().eq('user_id',me.id).eq('trip_id',tripId);
+  if(error){alert('Terugzetten lukte niet: '+error.message);return;}
+  await render();
+}
 
 async function openPersonalTravelEnvironment(tripId) {
   selectedTravelTripId = tripId;
