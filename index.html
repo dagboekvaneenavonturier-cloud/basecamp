@@ -3944,6 +3944,7 @@ async function admin() {
         <div class="field"><label for="edit-trip-destination-${t.id}">Bestemming</label><input id="edit-trip-destination-${t.id}" maxlength="250" value="${esc(t.destination||'')}"></div>
         <div class="field"><label for="edit-trip-start-${t.id}">Startdatum</label><input id="edit-trip-start-${t.id}" type="date" value="${esc(t.start_date||'')}"></div>
         <div class="field"><label for="edit-trip-end-${t.id}">Einddatum</label><input id="edit-trip-end-${t.id}" type="date" value="${esc(t.end_date||'')}"></div>
+        <div class="field"><label for="edit-trip-price-${t.id}">Prijs per persoon (€) – optioneel</label><input id="edit-trip-price-${t.id}" type="number" min="0" step="0.01" inputmode="decimal" value="${t.price!==null&&t.price!==undefined?esc(String(t.price)):''}" placeholder="Bijv. 1495"></div>
         <div class="field"><label for="edit-trip-description-${t.id}">Omschrijving</label><textarea id="edit-trip-description-${t.id}" rows="5">${esc(t.description||'')}</textarea></div>
         <div class="field"><label for="edit-trip-website-${t.id}">Website-link</label><input id="edit-trip-website-${t.id}" type="url" maxlength="1000" value="${esc(t.website_url||'')}" placeholder="https://..."></div>
         <div class="field"><label for="edit-trip-image-${t.id}">Nieuwe reisfoto (optioneel)</label>${t.image_url?`<img src="${esc(t.image_url)}" alt="Huidige reisfoto" style="width:150px;max-height:100px;object-fit:cover;border-radius:8px;display:block;margin:6px 0">`:''}<input id="edit-trip-image-${t.id}" type="file" accept="image/jpeg,image/png,image/webp,image/gif"></div>
@@ -4229,13 +4230,17 @@ async function saveTripEdits(tripId) {
   let websiteUrl;
   try { websiteUrl = normalizeTripWebsiteUrl($('edit-trip-website-' + tripId)?.value || ''); }
   catch (error) { return alert(error.message || error); }
+  const priceInput = $('edit-trip-price-' + tripId)?.value.trim() ?? '';
+  const price = priceInput === '' ? null : Number(priceInput);
+  if (price !== null && (!Number.isFinite(price) || price < 0)) return alert('Vul een geldige prijs van €0 of hoger in.');
   const payload = {
     title,
     destination: $('edit-trip-destination-' + tripId)?.value.trim() || null,
     description: $('edit-trip-description-' + tripId)?.value.trim() || null,
     start_date: startDate,
     end_date: endDate,
-    website_url: websiteUrl
+    website_url: websiteUrl,
+    price
   };
   const imageInput = $('edit-trip-image-' + tripId);
   const imageFile = imageInput?.files?.[0];
