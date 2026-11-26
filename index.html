@@ -1474,7 +1474,7 @@ function compassQuizForm() {
     <div class="eyebrow">JOUW PERSOONLIJKE ROUTEWIJZER</div>
     <h1>Welk avontuur past bij jou?</h1>
     <p>Van een eerste micro-avontuur tot een meerdaagse expeditie. Vertel ons waar je warm voor loopt en ontdek welke reizen aansluiten bij jouw interesses, ervaring en verwachtingen.</p>
-    <div class="compass-meta"><span>⌖ 8 korte vragen</span><span>◷ Ongeveer 2 minuten</span><span>↗ Persoonlijke reissuggesties</span></div>
+    <div class="compass-meta"><span>⌖ 10 korte vragen</span><span>◷ Ongeveer 2 minuten</span><span>↗ Persoonlijke reissuggesties</span></div>
   </div>
   <div class="compass-questions">
     ${compassQuizField('adventure_types','Wat voor avontuur spreekt je het meest aan?',true,'01','Je mag meerdere avontuurlijke activiteiten aanduiden.')}
@@ -1496,7 +1496,9 @@ function compassQuizForm() {
         <label class="compass-choice"><input type="radio" name="compass-duration" value="15-365"><span>15 dagen of langer</span></label>
       </div>
     </section>
-    ${compassQuizField('motivations','Wat maakt een avontuur voor jou geslaagd?',true,'08','Wat hoop je vooral mee naar huis te nemen?')}
+    ${compassQuizField('budget','Welke prijsklasse past bij jouw budget?',false,'08','Kies de prijsklasse die je ongeveer per reis wilt uitgeven.')}
+    ${compassQuizField('motivations','Wat maakt een avontuur voor jou geslaagd?',true,'09','Wat hoop je vooral mee naar huis te nemen?')}
+    ${compassQuizField('preparation','Hoeveel voorbereiding zie je zitten?',false,'10','Sommige reizen vragen weinig voorbereiding, andere hebben een uitgebreid voorbereidingstraject.')}
   </div>
   <div class="compass-footnote">Geen enkel antwoord sluit je uit. Het kompas helpt je ontdekken wat bij je past. Bij elke reis tonen we ook eerlijk welke ervaring en voorbereiding nodig zijn.</div>
   <div class="compass-submit">
@@ -1513,7 +1515,7 @@ function compassReadAnswers() {
     experience_level:single('experience_level'), physical_level:single('physical_level'),
     accommodation_types:multi('accommodation_types'), environments:multi('environments'),
     duration: document.querySelector('input[name="compass-duration"]:checked')?.value || '',
-    motivations:multi('motivations')
+    budget:single('budget'), motivations:multi('motivations'), preparation:single('preparation')
   };
 }
 
@@ -1543,6 +1545,22 @@ function compassMatch(answers, profile, trip) {
   addArray(answers.accommodation_types,p.accommodation_types,10);
   addArray(answers.environments,p.environments,10);
   addArray(answers.motivations,p.motivations,5);
+  if (answers.budget && trip.price != null && trip.price !== '') {
+    possible += 10;
+    const [budgetMin,budgetMax] = answers.budget.split('-').map(Number);
+    const price = Number(trip.price);
+    if (Number.isFinite(price)) {
+      if (price >= budgetMin && price <= budgetMax) earned += 10;
+      else if ((price < budgetMin && budgetMin-price <= 500) || (price > budgetMax && price-budgetMax <= 500)) earned += 5;
+    }
+  }
+  if (answers.preparation && p.preparation_level) {
+    possible += 10;
+    const prepLevels = ['geen','dag','weekend','traject'];
+    const distance = Math.abs(prepLevels.indexOf(answers.preparation)-prepLevels.indexOf(p.preparation_level));
+    if (distance === 0) earned += 10;
+    else if (distance === 1) earned += 5;
+  }
   if (answers.duration && (p.duration_min_days || p.duration_max_days)) {
     possible += 5;
     const [lo,hi] = answers.duration.split('-').map(Number);
@@ -1563,7 +1581,7 @@ async function showCompassResults() {
   if (button) { button.disabled = true; button.textContent = 'Je kompas wordt berekend…'; }
   try {
     const [{data:trips,error:tripError},{data:profiles,error:profileError},{data:myInterestRows,error:myInterestError}] = await Promise.all([
-      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url,website_url').eq('status','published').not('start_date','is',null).gte('start_date',localDateISO()).order('start_date'),
+      sb.from('trips').select('id,title,destination,description,start_date,end_date,status,image_url,website_url,price').eq('status','published').not('start_date','is',null).gte('start_date',localDateISO()).order('start_date'),
       sb.from('adventure_compass_profiles').select('*'),
       sb.from('trip_interests').select('trip_id').eq('user_id',me.id)
     ]);
@@ -1586,6 +1604,8 @@ async function showCompassResults() {
         <h3>${esc(t.title)}</h3><b>${label}</b>
         <p class="muted">${esc(t.description||'')}</p>
         <div class="notice">${esc(experienceNote)}</div>
+        ${t.price != null && t.price !== '' ? `<p><b>Prijs:</b> € ${Number(t.price).toLocaleString('nl-BE',{maximumFractionDigits:0})}</p>` : ''}
+        ${p.preparation_level ? `<p class="muted"><b>Voorbereiding:</b> ${{geen:'Liever geen voorbereiding',dag:'1 voorbereidingsdag',weekend:'Een voorbereidingsweekend',traject:'Een volledig voorbereidingstraject'}[p.preparation_level] || 'Niet opgegeven'}</p>` : ''}
         ${p.required_skills?.length?`<p class="muted"><b>Vaardigheden:</b> ${p.required_skills.map(x=>esc((COMPASS_OPTIONS.required_skills.find(o=>o[0]===x)||[x,x])[1])).join(', ')}</p>`:''}
         ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
         <button class="btn ${myInterestSet.has(t.id)?'light':''}" onclick="toggleTripInterest('${t.id}',${myInterestSet.has(t.id)})">${myInterestSet.has(t.id)?'✓ Je hebt interesse getoond':'Ik heb interesse'}</button>
@@ -3390,8 +3410,8 @@ const COMPASS_OPTIONS = {
     ['licht','Licht'],['gemiddeld','Gemiddeld'],['zwaar','Zwaar'],['zeer_zwaar','Zeer zwaar']
   ],
   experience_level: [
-    ['geen','Geen ervaring vereist'],['enige','Enige ervaring gewenst'],
-    ['specifiek','Specifieke ervaring gewenst'],['ervaren','Ervaren avonturiers']
+    ['geen','Ik heb geen ervaring'],['enige','Ik heb enige ervaring'],
+    ['specifiek','Ik heb specifieke ervaring'],['ervaren','Ik ben een ervaren avonturier']
   ],
   required_skills: [
     ['wildwater','Wildwater'],['navigatie','Kaart en kompas'],['bergbeklimming','Bergbeklimming'],
@@ -3404,7 +3424,16 @@ const COMPASS_OPTIONS = {
   ],
   environments: [
     ['bergen','Bergen'],['rivieren','Rivieren'],['jungle','Jungle'],['woestijn','Woestijn'],
-    ['bossen','Bossen'],['fjorden','Fjorden'],['kust','Kust / zee']
+    ['bossen','Bossen'],['fjorden','Fjorden'],['meren','Meren']
+  ],
+  budget: [
+    ['0-500','Tot € 500'],['500-1500','€ 500 tot € 1.500'],
+    ['1500-3000','€ 1.500 tot € 3.000'],['3000-5000','€ 3.000 tot € 5.000'],
+    ['5000-999999','Meer dan € 5.000']
+  ],
+  preparation: [
+    ['geen','Liever geen voorbereiding'],['dag','1 voorbereidingsdag'],
+    ['weekend','Een voorbereidingsweekend'],['traject','Een volledig voorbereidingstraject']
   ],
   motivations: [
     ['vaardigheden_leren','Nieuwe vaardigheden leren'],['grenzen_verleggen','Grenzen verleggen'],
@@ -3442,6 +3471,14 @@ function compassProfileForm(prefix, profile = {}) {
       ${compassSingleField(prefix,'adventure_level','Avontuurlijk niveau',profile.adventure_level || 'uitdagend')}
       ${compassSingleField(prefix,'physical_level','Fysieke uitdaging',profile.physical_level || 'gemiddeld')}
       ${compassSingleField(prefix,'experience_level','Ervaringsniveau',profile.experience_level || 'geen')}
+      <div class="field"><label for="${prefix}-preparation_level">Vereist voorbereidingsniveau</label>
+        <select id="${prefix}-preparation_level">
+          <option value="" ${!profile.preparation_level?'selected':''}>Nog niet ingesteld</option>
+          <option value="geen" ${profile.preparation_level==='geen'?'selected':''}>Liever geen voorbereiding</option>
+          <option value="dag" ${profile.preparation_level==='dag'?'selected':''}>1 voorbereidingsdag</option>
+          <option value="weekend" ${profile.preparation_level==='weekend'?'selected':''}>Een voorbereidingsweekend</option>
+          <option value="traject" ${profile.preparation_level==='traject'?'selected':''}>Een volledig voorbereidingstraject</option>
+        </select></div>
       ${compassMultiField(prefix,'required_skills','Benodigde vaardigheden',profile.required_skills)}
       ${compassMultiField(prefix,'accommodation_types','Overnachting en comfort',profile.accommodation_types)}
       ${compassMultiField(prefix,'environments','Omgeving',profile.environments)}
@@ -3478,6 +3515,7 @@ function readCompassProfile(prefix) {
     adventure_level:$(`${prefix}-adventure_level`).value,
     physical_level:$(`${prefix}-physical_level`).value,
     experience_level:$(`${prefix}-experience_level`).value,
+    preparation_level:$(`${prefix}-preparation_level`)?.value || null,
     required_skills:readMulti('required_skills'),
     accommodation_types:readMulti('accommodation_types'),
     environments:readMulti('environments'),
