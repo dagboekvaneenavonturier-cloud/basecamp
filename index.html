@@ -812,19 +812,37 @@ function communityRank(patchCount) {
   return '';
 }
 
+function formatTripPrice(price) {
+  const value = Number(price);
+  return price !== null && price !== undefined && price !== '' && Number.isFinite(value) ? new Intl.NumberFormat('nl-BE',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(value) + ' p.p.' : '';
+}
+
 async function patchCountsFor(ids) {
   const uniqueIds = [...new Set((ids || []).filter(Boolean))];
   const counts = Object.fromEntries(uniqueIds.map(id => [id, 0]));
   if (!uniqueIds.length) return counts;
-  const {data:participations,error} = await sb.from('trip_participants')
-    .select('user_id,trip_id').in('user_id', uniqueIds);
+  const [{data:participations,error},{data:guided,error:guideError}] = await Promise.all([
+    sb.from('trip_participants').select('user_id,trip_id').in('user_id', uniqueIds),
+    sb.from('trip_guides').select('guide_user_id,trip_id').in('guide_user_id', uniqueIds)
+  ]);
   if (error) throw error;
-  const tripIds = [...new Set((participations || []).map(x => x.trip_id).filter(Boolean))];
+  if (guideError) throw guideError;
+  // Combineer deelname en gidsopdrachten. Een persoon krijgt per reis maximaal één patch.
+  const tripsByUser = new Map();
+  (participations || []).forEach(row => {
+    if (!tripsByUser.has(row.user_id)) tripsByUser.set(row.user_id, new Set());
+    tripsByUser.get(row.user_id).add(row.trip_id);
+  });
+  (guided || []).forEach(row => {
+    if (!tripsByUser.has(row.guide_user_id)) tripsByUser.set(row.guide_user_id, new Set());
+    tripsByUser.get(row.guide_user_id).add(row.trip_id);
+  });
+  const tripIds = [...new Set([...tripsByUser.values()].flatMap(set => [...set]).filter(Boolean))];
   if (!tripIds.length) return counts;
   const {data:trips,error:tripError} = await sb.from('trips').select('id,end_date').in('id',tripIds);
   if (tripError) throw tripError;
   const ended = new Set((trips || []).filter(tripHasEnded).map(t => t.id));
-  (participations || []).forEach(row => { if (ended.has(row.trip_id)) counts[row.user_id] = (counts[row.user_id] || 0) + 1; });
+  tripsByUser.forEach((ids,userId) => { counts[userId] = [...ids].filter(id => ended.has(id)).length; });
   return counts;
 }
 
@@ -1626,7 +1644,7 @@ function discoverTabs(active) { return `<div class="tabs" style="display:flex;ga
 
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
-   .select('id,title,destination,description,start_date,end_date,status,image_url,website_url,booking_status')
+   .select('id,title,destination,description,start_date,end_date,status,image_url,website_url,booking_status,price')
     .eq('status','published')
     .or(`end_date.is.null,end_date.gte.${localDateISO()}`)
     .order('start_date');
@@ -1689,7 +1707,7 @@ async function myAdventures(includeHeading = true) {
   const allTripIds=[...new Set([...interestedIds,...discussedIds,...participatedIds,...guidedIds])];
   let tripMap={};
   if(allTripIds.length){
-    const {data:tripRows,error}=await sb.from('trips').select('id,title,destination,start_date,end_date,status,image_url,patch_image_url').in('id',allTripIds);
+    const {data:tripRows,error}=await sb.from('trips').select('id,title,destination,start_date,end_date,status,image_url,patch_image_url,price').in('id',allTripIds);
     if(error) throw error;
     tripMap=Object.fromEntries((tripRows||[]).map(t=>[t.id,t]));
   }
@@ -1723,7 +1741,7 @@ async function myAdventures(includeHeading = true) {
     const participant=participatedIds.includes(t.id);
     const privateGroup=privateTripGroups[t.id];
     const chatButton=participant?(privateGroup?`<button class="btn light" onclick="openPrivateTripChat('${privateGroup.id}')">Open reischat →</button>`:'<p class="muted" style="margin:8px 0">De privéreischat wordt klaargemaakt.</p>'):`<button class="btn light" onclick="openTripDiscussion('${t.id}')">${esc(buttonText)}</button>`;
-    return `<article class="card">${t.image_url?`<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">`:''}<span class="tag">${esc(label)}</span><h3>${esc(t.title)}</h3><p class="muted">${esc(t.destination||'Bestemming volgt')} · ${esc(dateLabel(t))}</p>${chatButton}${participant&&!tripHasEnded(t)?`<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>`:''}${archiveAction?`<button class="btn light" style="margin-top:7px" onclick="${archiveAction}('${t.id}')">${archiveAction==='archiveMyTrip'?'Archiveren':'Terugzetten'}</button>`:''}</article>`;
+    return `<article class="card">${t.image_url?`<img src="${esc(t.image_url)}" alt="${esc(t.title)}" loading="lazy" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:9px;margin-bottom:10px">`:''}<span class="tag">${esc(label)}</span><h3>${esc(t.title)}</h3><p class="muted">${esc(t.destination||'Bestemming volgt')} · ${esc(dateLabel(t))}</p>${formatTripPrice(t.price)?`<p style="font-weight:800;color:var(--green)">${formatTripPrice(t.price)}</p>`:''}${chatButton}${participant&&!tripHasEnded(t)?`<button class="btn" style="margin-top:7px" onclick="openPersonalTravelEnvironment('${t.id}')">Open mijn reisomgeving →</button>`:''}${archiveAction?`<button class="btn light" style="margin-top:7px" onclick="${archiveAction}('${t.id}')">${archiveAction==='archiveMyTrip'?'Archiveren':'Terugzetten'}</button>`:''}</article>`;
   };
 
   return (includeHeading?section('JOUW BASECAMP','Mijn avonturen','Alles wat je bij BASECAMP volgt, op één plek.'):'')+`
@@ -3879,7 +3897,7 @@ async function admin() {
   }
 
   if (adminSection === 'trips') {
-    const {data:trips,error} = await sb.from('trips').select('id,title,destination,description,image_url,status,patch_image_url,start_date,end_date,booking_status,website_url').order('start_date',{ascending:false});
+    const {data:trips,error} = await sb.from('trips').select('id,title,destination,description,image_url,status,patch_image_url,start_date,end_date,booking_status,website_url,price').order('start_date',{ascending:false});
     if (error) throw error;
     const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id,created_at');
     if (interestError) throw interestError;
@@ -3917,7 +3935,7 @@ async function admin() {
               <button class="btn" onclick="saveExistingCompassProfile('${t.id}')">Parameters opslaan</button>
             </div></details>`
         : `<p class="muted" style="font-size:12px">Avonturenkompas-parameters kunnen door een beheerder worden ingesteld.</p>`;
-      return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div></div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
+      return `<div style="border-top:1px solid var(--line);padding:14px 0"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(t.title)}</b><div class="muted">${esc(t.destination||'')} · ${t.start_date||'Datum onbekend'}${t.end_date?' – '+t.end_date:''}</div>${formatTripPrice(t.price)?`<div style="font-weight:750;margin-top:4px">${formatTripPrice(t.price)}</div>`:'<div class="muted" style="margin-top:4px">Prijs nog niet ingevuld</div>'}</div><span class="tag">${t.status==='draft'?'Concept':past.includes(t)?'Afgelopen':'Gepland'}</span></div>
       <p><b>${people.length}</b> geïnteresseerden · <b>${confirmed.length}</b> bevestigde deelnemers</p>
       <div class="field" style="max-width:340px"><label>Reisstatus</label><select onchange="updateTripBookingStatus('${t.id}',this.value)"><option value="open" ${(t.booking_status||'open')==='open'?'selected':''}>Inschrijvingen open</option><option value="almost_full" ${t.booking_status==='almost_full'?'selected':''}>Bijna vol</option><option value="full" ${t.booking_status==='full'?'selected':''}>Volzet</option><option value="waitlist" ${t.booking_status==='waitlist'?'selected':''}>Wachtlijst</option><option value="closed" ${t.booking_status==='closed'?'selected':''}>Inschrijvingen gesloten</option></select></div>
       <div class="field" style="max-width:560px"><label for="trip-website-${t.id}">Website-link voor meer informatie en boekingen</label><input id="trip-website-${t.id}" type="url" inputmode="url" maxlength="1000" value="${esc(t.website_url||'')}" placeholder="https://dagboekvaneenavonturier.com/..."/><button class="btn light" style="margin-top:7px" onclick="saveTripWebsiteUrl('${t.id}')">Website-link opslaan</button></div>
@@ -3963,6 +3981,7 @@ async function admin() {
         <input id="tdest" placeholder="Bestemming" style="margin:8px 0">
         <input id="ts" type="date">
         <input id="te" type="date" style="margin:8px 0">
+        <div class="field"><label for="tripPrice">Prijs per persoon (€) – optioneel</label><input id="tripPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Bijv. 1495"></div>
         <textarea id="tx" placeholder="Omschrijving"></textarea>
         <div class="field" style="margin-top:8px"><label for="tripWebsiteUrl">Website-link voor meer informatie en boekingen (optioneel)</label><input id="tripWebsiteUrl" type="url" inputmode="url" maxlength="1000" placeholder="https://dagboekvaneenavonturier.com/..."/></div>
         <input id="tripImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="margin:8px 0">
@@ -4132,6 +4151,7 @@ async function addTrip(status = 'published') {
     description:$('tx').value,
     start_date:$('ts').value || null,
     end_date:$('te').value || null,
+    price:$('tripPrice')?.value !== '' ? Number($('tripPrice').value) : null,
     image_url:imageUrl,
     website_url:websiteUrl,
     status:status === 'draft' ? 'draft' : 'published'
