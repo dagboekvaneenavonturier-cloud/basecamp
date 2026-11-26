@@ -1670,6 +1670,17 @@ async function discover() {
     .order('start_date');
   if (error) throw error;
 
+  const tripIdsForPreparation = (trips || []).map(t => t.id);
+  let preparationProfiles = {};
+  if (tripIdsForPreparation.length) {
+    const {data:preparationRows,error:preparationError} = await sb
+      .from('adventure_compass_profiles')
+      .select('trip_id,preparation_level')
+      .in('trip_id',tripIdsForPreparation);
+    if (preparationError) throw preparationError;
+    preparationProfiles = Object.fromEntries((preparationRows || []).map(row => [row.trip_id,row]));
+  }
+
   if (discoverMode === 'archive') return section('HERINNERINGEN','Ontdek reizen','Bekijk het actuele aanbod en blader door eerdere avonturen.') + discoverTabs('archive') + await tripArchive(false);
   if (discoverMode === 'results' && compassResultsHtml) return compassResultsHtml;
 
@@ -1695,6 +1706,7 @@ async function discover() {
         <div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag">${esc(t.destination || 'Avontuur')}</span>${tripBookingStatusTag(t.booking_status)}</div><h3>${esc(t.title)}</h3>
         <b>${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}</b>
         <p class="muted">${esc(t.description || '')}</p>
+        ${preparationProfiles[t.id]?.preparation_level && preparationProfiles[t.id].preparation_level !== 'geen' ? `<div class="notice" style="margin:10px 0"><b>Voorbereiding voorzien</b><br>${({dag:'1 voorbereidingsdag',weekend:'Een voorbereidingsweekend',traject:'Een volledig voorbereidingstraject'})[preparationProfiles[t.id].preparation_level] || ''}</div>` : ''}
         ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
         <button class="btn ${interested ? 'light' : ''}" onclick="toggleTripInterest('${t.id}',${interested})">${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}</button>
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
