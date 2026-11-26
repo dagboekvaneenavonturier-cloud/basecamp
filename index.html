@@ -350,6 +350,7 @@ let chatChannel = null;
 let selectedTripId = null;
 let selectedArchiveTripId = null;
 let selectedTravelTripId = null;
+let selectedMicroAdventureId = null;
 let selectedProfileId = null;
 let adventureInterestFilter = 'Alles';
 let adventureNameSearch = '';
@@ -755,6 +756,7 @@ async function render() {
       page === 'myAdventures' ? await myAdventures() :
       page === 'tripDiscussion' ? await tripDiscussion() :
       page === 'travelInfo' ? await personalTravelEnvironment() :
+      page === 'microTravelInfo' ? await microAdventurePersonalEnvironment() :
       page === 'notifications' ? await notifications() :
       page === 'chat' ? await chat() :
       page === 'profile' ? await profile() :
@@ -1660,7 +1662,7 @@ async function updateTripBookingStatus(tripId, status) {
   await render();
 }
 
-function discoverTabs(active) { return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='trips'?'active':''}" onclick="setDiscoverMode('trips')">⌖ Alle reizen</button><button type="button" class="${active==='compass'?'active':''}" onclick="setDiscoverMode('compass')">Avonturenkompas</button><button type="button" class="${active==='archive'?'active':''}" onclick="setDiscoverMode('archive')">▧ Reisarchief</button></div>`; }
+function discoverTabs(active) { return `<div class="tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px"><button type="button" class="${active==='trips'?'active':''}" onclick="setDiscoverMode('trips')">⌖ Reizen</button><button type="button" class="${active==='micro'?'active':''}" onclick="setDiscoverMode('micro')">♧ Micro-avonturen</button><button type="button" class="${active==='compass'?'active':''}" onclick="setDiscoverMode('compass')">Avonturenkompas</button><button type="button" class="${active==='archive'?'active':''}" onclick="setDiscoverMode('archive')">▧ Reisarchief</button></div>`; }
 
 async function discover() {
   const {data:trips,error} = await sb.from('trips')
@@ -1686,6 +1688,9 @@ async function discover() {
 
   if (discoverMode === 'compass') {
     return section('NIEUWE PLANNEN','Ontdek avonturen','Vind een reis die past bij jouw goesting, ervaring en verwachtingen.') + discoverTabs('compass') + compassQuizForm();
+  }
+  if (discoverMode === 'micro') {
+    return section('KLEINE UITSTAPPEN, GROTE HERINNERINGEN','Ontdek reizen','Ontdek onze geplande micro-avonturen en sluit aan wanneer je mee op pad wilt.') + discoverTabs('micro') + await discoverMicroAdventures();
   }
 
   const {data:interests,error:interestError} = await sb.from('trip_interests').select('trip_id,user_id').in('trip_id',(trips || []).map(t => t.id));
@@ -1719,6 +1724,85 @@ async function discover() {
       </div>`;
     }).join('') || '<p class="muted">Er zijn nog geen reizen gepubliceerd. Nieuwe avonturen verschijnen hier binnenkort.</p>'}
   </div>`;
+}
+
+async function discoverMicroAdventures() {
+  const {data:events,error} = await sb.from('adventure_calendar_events').select('*')
+    .eq('event_type','micro_avontuur').eq('status','published').gte('start_date',localDateISO()).order('start_date');
+  if (error) throw error;
+  const ids=(events||[]).map(e=>e.id);
+  if (!ids.length) return '<div class="card"><p class="muted">Er staan momenteel nog geen micro-avonturen gepland. Hou de Avonturenkalender in de gaten!</p></div>';
+  const [{data:interestRows,error:interestError},{data:participantRows,error:participantError},{data:infoRows,error:infoError}] = await Promise.all([
+    sb.from('micro_adventure_interests').select('event_id,user_id').in('event_id',ids),
+    sb.from('micro_adventure_participants').select('event_id,user_id').in('event_id',ids),
+    sb.from('micro_adventure_info').select('event_id').in('event_id',ids)
+  ]);
+  for (const e of [interestError,participantError,infoError]) if(e) throw e;
+  const names=await profilesFor([...(interestRows||[]).map(x=>x.user_id),...(participantRows||[]).map(x=>x.user_id)]);
+  const myInterests=new Set((interestRows||[]).filter(x=>x.user_id===me.id).map(x=>x.event_id));
+  const mySignups=new Set((participantRows||[]).filter(x=>x.user_id===me.id).map(x=>x.event_id));
+  return `<div class="grid">${events.map(e=>{
+    const interests=(interestRows||[]).filter(x=>x.event_id===e.id);
+    const participants=(participantRows||[]).filter(x=>x.event_id===e.id);
+    const signed=mySignups.has(e.id), interested=myInterests.has(e.id);
+    const range=e.end_date&&e.end_date!==e.start_date?`${calendarDate(e.start_date)} – ${calendarDate(e.end_date)}`:calendarDate(e.start_date);
+    return `<article class="card"><div class="row" style="gap:6px;flex-wrap:wrap"><span class="tag">Micro-avontuur</span>${e.location?`<span class="tag">${esc(e.location)}</span>`:''}</div><h3>${esc(e.title)}</h3><b>${range}${e.start_time?' · '+esc(String(e.start_time).slice(0,5)):''}</b>${e.description?`<p class="muted">${esc(e.description)}</p>`:''}
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn ${interested?'light':''}" onclick="toggleMicroInterest('${e.id}',${interested})">${interested?'✓ Interesse getoond':'Ik heb interesse'}</button><button class="btn ${signed?'light':''}" onclick="${signed?`cancelMicroSignup('${e.id}')`:`signupMicroAdventure('${e.id}')`}">${signed?'Inschrijving annuleren':'Ik schrijf me in'}</button>${signed?`<button class="btn light" onclick="openMicroAdventureEnvironment('${e.id}')">Mijn micro-avontuur →</button>`:''}</div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><b>Wie gaat er mee?</b><p class="muted" style="margin:5px 0">${participants.length} ${participants.length===1?'ingeschreven deelnemer':'ingeschreven deelnemers'}</p>${participants.map(x=>memberLink(x.user_id,names[x.user_id])).join('')||'<p class="muted">Er zijn nog geen inschrijvingen.</p>'}<p class="muted" style="margin:10px 0 4px">${interests.length} leden hebben interesse</p>${interests.map(x=>memberLink(x.user_id,names[x.user_id])).join('')}</div>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+async function toggleMicroInterest(eventId, currentlyInterested) {
+  const query=currentlyInterested
+    ? sb.from('micro_adventure_interests').delete().eq('event_id',eventId).eq('user_id',me.id)
+    : sb.from('micro_adventure_interests').upsert({event_id:eventId,user_id:me.id},{onConflict:'event_id,user_id'});
+  const {error}=await query;
+  if(error)return alert('Je interesse kon niet worden aangepast: '+error.message);
+  await render();
+}
+async function signupMicroAdventure(eventId) {
+  const {error}=await sb.from('micro_adventure_participants').upsert({event_id:eventId,user_id:me.id},{onConflict:'event_id,user_id'});
+  if(error)return alert('Inschrijven is niet gelukt: '+error.message);
+  alert('Je bent ingeschreven voor dit micro-avontuur!'); await render();
+}
+async function cancelMicroSignup(eventId) {
+  if(!confirm('Wil je je inschrijving voor dit micro-avontuur annuleren?'))return;
+  const {error}=await sb.from('micro_adventure_participants').delete().eq('event_id',eventId).eq('user_id',me.id);
+  if(error)return alert('Je inschrijving kon niet worden geannuleerd: '+error.message);
+  await render();
+}
+function openMicroAdventureEnvironment(eventId) { selectedMicroAdventureId=eventId; page='microTravelInfo'; render(); }
+async function microAdventurePersonalEnvironment() {
+  if(!selectedMicroAdventureId)return '<div class="notice">Geen micro-avontuur geselecteerd.</div>';
+  const [{data:participant,error:participantError},{data:event,error:eventError},{data:info,error:infoError}] = await Promise.all([
+    sb.from('micro_adventure_participants').select('id').eq('event_id',selectedMicroAdventureId).eq('user_id',me.id).maybeSingle(),
+    sb.from('adventure_calendar_events').select('*').eq('id',selectedMicroAdventureId).maybeSingle(),
+    sb.from('micro_adventure_info').select('*').eq('event_id',selectedMicroAdventureId).maybeSingle()
+  ]);
+  for(const e of [participantError,eventError,infoError])if(e)throw e;
+  if(!participant)return '<div class="notice error">Deze persoonlijke omgeving is alleen beschikbaar voor ingeschreven deelnemers.</div>';
+  if(!event)return '<div class="notice">Dit micro-avontuur kon niet worden gevonden.</div>';
+  const date=event.end_date&&event.end_date!==event.start_date?`${calendarDate(event.start_date)} – ${calendarDate(event.end_date)}`:calendarDate(event.start_date);
+  return `${section('JOUW MICRO-AVONTUUR',esc(event.title),'Alle praktische informatie voor we samen op pad gaan.')}
+    <div class="card"><span class="tag">${date}</span><h3>${esc(event.title)}</h3>${event.description?`<p>${esc(event.description)}</p>`:''}
+      <h3 style="margin-top:18px">Afspraak</h3><p>${info?.meeting_time?esc(info.meeting_time):'Het afspraakuur wordt nog gedeeld.'}</p>
+      ${info?.maps_url?`<a class="btn light" href="${esc(info.maps_url)}" target="_blank" rel="noopener noreferrer">Open locatie in Google Maps ↗</a>`:'<p class="muted">De Google Maps-locatie wordt nog gedeeld.</p>'}
+      <h3 style="margin-top:20px">Kleine paklijst</h3>${info?.packing_list?`<div class="notice">${esc(info.packing_list).replace(/\n/g,'<br>')}</div>`:'<p class="muted">De paklijst wordt later aangevuld.</p>'}
+      <button class="btn light" onclick="setDiscoverMode('micro');page='discover';render()">← Terug naar micro-avonturen</button>
+    </div>`;
+}
+
+async function saveMicroAdventureInfo(eventId) {
+  if(me?.role!=='admin')return alert('Alleen beheerders kunnen praktische informatie aanpassen.');
+  const time=$('micro-time-'+eventId)?.value.trim()||null;
+  const rawUrl=$('micro-map-'+eventId)?.value.trim()||null;
+  let mapsUrl=null;
+  if(rawUrl){try{const u=new URL(rawUrl);if(!['http:','https:'].includes(u.protocol))throw new Error();mapsUrl=u.href;}catch(_){return alert('Vul een geldige Google Maps-link in, beginnend met https://');}}
+  const packing=$('micro-pack-'+eventId)?.value.trim()||null;
+  const {error}=await sb.from('micro_adventure_info').upsert({event_id:eventId,meeting_time:time,maps_url:mapsUrl,packing_list:packing,updated_by:me.id,updated_at:new Date().toISOString()},{onConflict:'event_id'});
+  if(error)return alert('Praktische informatie opslaan mislukt: '+error.message);
+  alert('Praktische informatie opgeslagen.');await render();
 }
 
 async function myAdventures(includeHeading = true) {
@@ -3688,7 +3772,10 @@ async function adminCalendar(){
   const {data,error}=await sb.from('adventure_calendar_events').select('*').order('start_date',{ascending:true});
   if(error)throw error;
   const editing=(data||[]).find(x=>x.id===editingCalendarEventId);
-  return `<div class="card"><div class="eyebrow">KALENDERBEHEER</div><h3>Activiteiten toevoegen</h3><p class="muted">Gepubliceerde reizen verschijnen automatisch. Voeg hier micro-avonturen, webinars, trainingen en andere activiteiten toe.</p></div>${calendarAdminForm(editing||{})}<h3 style="font:20px Georgia;margin-top:22px">Zelf aangemaakte activiteiten</h3><div class="calendar-admin-list">${(data||[]).length?(data||[]).map(e=>`<div class="calendar-admin-row"><div><b>${esc(e.title)}</b><div class="muted">${calendarDate(e.start_date)}${e.end_date&&e.end_date!==e.start_date?' – '+calendarDate(e.end_date):''} · ${esc(calendarTypeLabel(e.event_type))} · ${e.status==='published'?'Gepubliceerd':e.status==='draft'?'Concept':'Geannuleerd'}</div></div><div class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn light" onclick="editCalendarEvent('${e.id}')">Bewerken</button><button class="btn light" onclick="deleteCalendarEvent('${e.id}')">Verwijderen</button></div></div>`).join(''):'<p class="muted">Je hebt nog geen aparte activiteiten toegevoegd.</p>'}</div>`;
+  const microIds=(data||[]).filter(e=>e.event_type==='micro_avontuur').map(e=>e.id);
+  let microInfo={};
+  if(microIds.length){const {data:rows,error:infoError}=await sb.from('micro_adventure_info').select('*').in('event_id',microIds);if(infoError)throw infoError;microInfo=Object.fromEntries((rows||[]).map(r=>[r.event_id,r]));}
+  return `<div class="card"><div class="eyebrow">KALENDERBEHEER</div><h3>Activiteiten toevoegen</h3><p class="muted">Gepubliceerde micro-avonturen verschijnen automatisch onder Ontdek reizen → Micro-avonturen. Kies bij soort activiteit voor Micro-avontuur. Hier kun je ook de persoonlijke praktische informatie beheren.</p></div>${calendarAdminForm(editing||{})}<h3 style="font:20px Georgia;margin-top:22px">Zelf aangemaakte activiteiten</h3><div class="calendar-admin-list">${(data||[]).length?(data||[]).map(e=>`<div class="calendar-admin-row"><div style="flex:1;min-width:240px"><b>${esc(e.title)}</b><div class="muted">${calendarDate(e.start_date)}${e.end_date&&e.end_date!==e.start_date?' – '+calendarDate(e.end_date):''} · ${esc(calendarTypeLabel(e.event_type))} · ${e.status==='published'?'Gepubliceerd':e.status==='draft'?'Concept':'Geannuleerd'}</div>${e.event_type==='micro_avontuur'?`<div class="card" style="margin-top:10px;background:#f7f6f1"><b>Persoonlijke micro-avonturenomgeving</b><div class="field"><label>Afspraakuur en afspraakinfo</label><input id="micro-time-${e.id}" value="${esc(microInfo[e.id]?.meeting_time||'')}" placeholder="Bijv. 09:30 verzamelen aan de parking"></div><div class="field"><label>Google Maps-link</label><input id="micro-map-${e.id}" type="url" value="${esc(microInfo[e.id]?.maps_url||'')}" placeholder="https://maps.google.com/..."></div><div class="field"><label>Kleine paklijst</label><textarea id="micro-pack-${e.id}" rows="3" placeholder="Wandelschoenen&#10;Regenjas&#10;Drinkfles">${esc(microInfo[e.id]?.packing_list||'')}</textarea></div><button class="btn" onclick="saveMicroAdventureInfo('${e.id}')">Praktische info opslaan</button></div>`:''}</div><div class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn light" onclick="editCalendarEvent('${e.id}')">Bewerken</button><button class="btn light" onclick="deleteCalendarEvent('${e.id}')">Verwijderen</button></div></div>`).join(''):'<p class="muted">Je hebt nog geen aparte activiteiten toegevoegd.</p>'}</div>`;
 }
 
 function adminMenu(active) {
