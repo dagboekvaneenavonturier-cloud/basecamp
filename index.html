@@ -4,6 +4,7 @@
 
 
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -2148,7 +2149,8 @@ async function notifications() {
     {data: tripItems, error: tripError},
     {data: postItems, error: postError},
     {data: chatItems, error: chatError},
-    {data: tripUpdateItems, error: tripUpdateError}
+    {data: tripUpdateItems, error: tripUpdateError},
+    {data: microSignupItems, error: microSignupError}
   ] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id,trip_id,discussion_id,created_at,read_at')
@@ -2172,6 +2174,12 @@ async function notifications() {
       .select('id,trip_id,title,message,created_at,read_at')
       .eq('recipient_id', me.id)
       .is('read_at', null)
+      .order('created_at', {ascending: false}),
+
+    sb.from('micro_adventure_admin_notifications')
+      .select('id,event_id,participant_id,created_at,read_at')
+      .eq('recipient_id', me.id)
+      .is('read_at', null)
       .order('created_at', {ascending: false})
   ]);
 
@@ -2179,13 +2187,15 @@ async function notifications() {
   if (postError) throw postError;
   if (chatError) throw chatError;
   if (tripUpdateError) throw tripUpdateError;
+  if (microSignupError) throw microSignupError;
 
   const trips = tripItems || [];
   const posts = postItems || [];
   const chats = chatItems || [];
   const tripUpdates = tripUpdateItems || [];
+  const microSignups = microSignupItems || [];
 
-    if (trips.length === 0 && posts.length === 0 && chats.length === 0 && tripUpdates.length === 0 && microSignups.length === 0) {
+  if (trips.length === 0 && posts.length === 0 && chats.length === 0 && tripUpdates.length === 0 && microSignups.length === 0) {
     return section(
       'BASECAMP',
       'Meldingen',
@@ -2380,11 +2390,87 @@ async function notifications() {
     tripUpdateHtml = `<div class="card"><h3>Updates van Dagboek van een Avonturier</h3>${tripUpdates.map(n=>`<article style="border-bottom:1px solid var(--line);padding:12px 0"><div class="feedtop"><b>${esc(n.title)}</b><span class="badge">Nieuwe reisupdate</span></div><p class="muted">${esc(tripMap[n.trip_id]?.title || 'Reisupdate')} · ${new Date(n.created_at).toLocaleDateString('nl-BE')}</p><p style="white-space:pre-wrap">${esc(n.message)}</p><button class="btn light" onclick="markTripUpdateRead('${n.id}')">Markeer als gelezen</button></article>`).join('')}</div>`;
   }
 
+  let microSignupHtml = '';
+  if (microSignups.length) {
+    const eventIds = [...new Set(microSignups.map(n => n.event_id))];
+    const participantIds = [...new Set(microSignups.map(n => n.participant_id))];
+
+    const [
+      {data: microEvents, error: microEventsError},
+      microNames
+    ] = await Promise.all([
+      sb.from('adventure_calendar_events')
+        .select('id,title,start_date')
+        .in('id', eventIds),
+      profilesFor(participantIds)
+    ]);
+
+    if (microEventsError) throw microEventsError;
+
+    const microEventMap = Object.fromEntries(
+      (microEvents || []).map(event => [event.id, event])
+    );
+
+    microSignupHtml = `
+      <div class="card">
+        <h3>Inschrijvingen micro-avonturen</h3>
+        <p class="muted">Nieuwe deelnemers die zich via BASECAMP hebben ingeschreven.</p>
+        ${microSignups.map(n => {
+          const event = microEventMap[n.event_id];
+          const participant = microNames[n.participant_id];
+          const eventDate = event?.start_date
+            ? new Date(event.start_date + 'T12:00:00').toLocaleDateString('nl-BE', {day:'numeric', month:'long', year:'numeric'})
+            : '';
+
+          return `
+            <article style="border-bottom:1px solid var(--line);padding:14px 0">
+              <div class="feedtop">
+                <b>Nieuwe inschrijving</b>
+                <span class="badge">Micro-avontuur</span>
+              </div>
+              <div style="margin:10px 0">
+                ${profileIdentity(participant, n.participant_id)}
+              </div>
+              <p>
+                <b>${esc(event?.title || 'Micro-avontuur')}</b>
+                ${eventDate ? `<br><span class="muted">${esc(eventDate)}</span>` : ''}
+              </p>
+              <p class="muted">
+                Deze deelnemer heeft zich ingeschreven. Je kunt nu contact opnemen over de praktische afspraken en betaling.
+              </p>
+              <button class="btn light" onclick="markMicroSignupRead('${n.id}')">
+                Markeer als afgehandeld
+              </button>
+            </article>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   return section(
     'BASECAMP',
     'Meldingen',
     'Blijf op de hoogte van reisupdates, reisgesprekken, communityreacties en chatberichten.'
-  ) + tripUpdateHtml + tripHtml + postHtml + chatHtml;
+  ) + microSignupHtml + tripUpdateHtml + tripHtml + postHtml + chatHtml;
+}
+
+async function markMicroSignupRead(notificationId) {
+  const {error} = await sb.from('micro_adventure_admin_notifications')
+    .update({read_at:new Date().toISOString()})
+    .eq('id', notificationId)
+    .eq('recipient_id', me.id);
+
+  if (error) {
+    await basecampInfoModal(
+      'Melding niet bijgewerkt',
+      'De inschrijvingsmelding kon niet als afgehandeld worden gemarkeerd: ' + error.message,
+      '!'
+    );
+    return;
+  }
+
+  await render();
 }
 
 async function markTripUpdateRead(notificationId) {
