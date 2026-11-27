@@ -1298,9 +1298,8 @@ async function setCommunityMode(mode) { communityMode = ['adventurers','chats'].
 
 async function community() {
   const heading = section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.');
-  const challengeBlock = communityMode === 'feed' ? await challengesWidget('community') : '';
   const content = communityMode === 'adventurers' ? await adventurers(false) : communityMode === 'chats' ? await chat() : composer() + await postsHtml();
-  return heading + challengeBlock + communityTabs(communityMode) + content;
+  return heading + communityTabs(communityMode) + content;
 }
 
 // =============================================
