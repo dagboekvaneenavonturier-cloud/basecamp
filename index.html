@@ -1763,8 +1763,23 @@ async function toggleMicroInterest(eventId, currentlyInterested) {
 }
 async function signupMicroAdventure(eventId) {
   const {error}=await sb.from('micro_adventure_participants').upsert({event_id:eventId,user_id:me.id},{onConflict:'event_id,user_id'});
-  if(error)return alert('Inschrijven is niet gelukt: '+error.message);
-  alert('Je bent ingeschreven voor dit micro-avontuur!'); await render();
+
+  if(error) {
+    await basecampInfoModal(
+      'Inschrijven niet gelukt',
+      error.message,
+      '!'
+    );
+    return;
+  }
+
+  await basecampInfoModal(
+    'Je bent ingeschreven!',
+    'Je inschrijving voor dit micro-avontuur is geregistreerd. Je vindt de praktische informatie terug in je persoonlijke omgeving.',
+    '✓'
+  );
+
+  await render();
 }
 async function cancelMicroSignup(eventId) {
   if(!confirm('Wil je je inschrijving voor dit micro-avontuur annuleren?'))return;
