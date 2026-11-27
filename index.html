@@ -1424,7 +1424,7 @@ async function openChallengeEntry(challengeId) {
     const uploaded=await sb.storage.from('post-images').upload(path,file,{contentType:file.type,upsert:false});
     if(uploaded.error){button.disabled=false;button.textContent='Inzenden';alert(uploaded.error.message);return;}
     const image_url=sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
-    const {error}=await sb.from('basecamp_challenge_entries').insert({challenge_id:challengeId,image_url,caption});
+    const {error}=await sb.from('basecamp_challenge_entries').insert({challenge_id:challengeId,user_id:me.id,image_url,caption});
     if(error){await sb.storage.from('post-images').remove([path]);button.disabled=false;button.textContent='Inzenden';alert(error.code==='23505'?'Je hebt al een foto ingezonden voor deze challenge.':error.message);return;}
     close();await go('challenges');
   };
