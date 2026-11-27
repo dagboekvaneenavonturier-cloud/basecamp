@@ -771,7 +771,13 @@ async function render() {
   }
 }
 async function unreadNotificationsCount() {
-  const [tripResult, postResult, chatResult, tripUpdateResult] = await Promise.all([
+  const [
+    tripResult,
+    postResult,
+    chatResult,
+    tripUpdateResult,
+    microSignupResult
+  ] = await Promise.all([
     sb.from('trip_discussion_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
@@ -790,6 +796,11 @@ async function unreadNotificationsCount() {
     sb.from('trip_update_notifications')
       .select('id', {count:'exact', head:true})
       .eq('recipient_id', me.id)
+      .is('read_at', null),
+
+    sb.from('micro_adventure_admin_notifications')
+      .select('id', {count:'exact', head:true})
+      .eq('recipient_id', me.id)
       .is('read_at', null)
   ]);
 
@@ -797,13 +808,14 @@ async function unreadNotificationsCount() {
   if (postResult.error) throw postResult.error;
   if (chatResult.error) throw chatResult.error;
   if (tripUpdateResult.error) throw tripUpdateResult.error;
+  if (microSignupResult.error) throw microSignupResult.error;
 
   return (tripResult.count || 0) +
     (postResult.count || 0) +
     (chatResult.count || 0) +
-    (tripUpdateResult.count || 0);
+    (tripUpdateResult.count || 0) +
+    (microSignupResult.count || 0);
 }
-
 
 function communityRank(patchCount) {
   const count = Number(patchCount || 0);
