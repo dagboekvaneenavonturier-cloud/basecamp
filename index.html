@@ -1323,13 +1323,15 @@ async function challengesWidget(location='community') {
   try { challenge = await getActiveChallenge(); }
   catch (error) { console.warn('Challenges konden niet worden geladen:',error); return ''; }
   if (!challenge) return `<section class="challenge-shell"><div class="eyebrow">SAMEN OP UITDAGING</div><h3 style="font:21px Georgia;margin:7px 0">Challenges</h3><p class="muted">Er loopt momenteel geen challenge. Start zelf een leuke uitdaging en nodig andere avonturiers uit om mee te doen.</p><button class="btn" onclick="openChallengeCreate()">＋ Start een challenge</button><button class="btn light" style="margin-left:6px" onclick="go('challenges')">Bekijk afgelopen challenges</button></section>`;
+  const {data:starter} = await sb.from('profiles').select('display_name').eq('id',challenge.user_id).maybeSingle();
+  const starterName = starter?.display_name || 'Een BASECAMP-avonturier';
   const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',challenge.id);
   const remaining = Math.max(0,Math.ceil((new Date(challenge.ends_at)-Date.now())/86400000));
   const ownEntry = await sb.from('basecamp_challenge_entries').select('id').eq('challenge_id',challenge.id).eq('user_id',me.id).maybeSingle();
   const canManage = challenge.user_id === me.id || me.role === 'admin';
   return `<section class="challenge-shell">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="eyebrow">DOE MEE AAN DE UITDAGING</div><span class="tag">${remaining===0?'Laatste dag':`Nog ${remaining} ${remaining===1?'dag':'dagen'}`}</span></div>
-    <div class="challenge-hero"><div class="eyebrow">ACTIEVE CHALLENGE</div><h3 style="font:25px Georgia;margin:8px 0;color:#fff">${esc(challenge.title)}</h3><p style="line-height:1.65;margin:0;color:#eef2e9">${esc(challenge.description)}</p></div>
+    <div class="challenge-hero"><div class="eyebrow">ACTIEVE CHALLENGE</div><h3 style="font:25px Georgia;margin:8px 0;color:#fff">${esc(challenge.title)}</h3><p style="line-height:1.65;margin:0;color:#eef2e9">${esc(challenge.description)}</p><div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.22);font-size:12px;color:#e6eadf">Gestart door <strong style="color:#fff">${esc(starterName)}</strong></div></div>
     <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span class="muted">📷 ${count||0} ${count===1?'inzending':'inzendingen'} · Eindigt ${new Date(challenge.ends_at).toLocaleDateString('nl-BE',{day:'numeric',month:'long'})}</span><div class="row" style="gap:7px;flex-wrap:wrap">${ownEntry.data?'<span class="tag">✓ Jij doet mee</span>':`<button class="btn gold" onclick="openChallengeEntry('${challenge.id}')">📷 ${location==='home'?'Doe mee':'Voeg jouw foto toe'}</button>`}<button class="btn light" onclick="go('challenges')">Bekijk challenge →</button>${canManage?`<button class="btn light" onclick="editChallenge('${challenge.id}')">✎ Bewerken</button><button class="btn danger" onclick="deleteChallenge('${challenge.id}')">Verwijderen</button>`:''}</div></div>
   </section>`;
 }
@@ -1345,9 +1347,10 @@ async function challengesPage() {
   if (!past?.length) html += '<p class="muted">Afgelopen challenges verschijnen hier zodra de eerste uitdaging is afgerond.</p>';
   else {
     for (const item of past) {
-      const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',item.id);
+      const [{count},{data:starter}] = await Promise.all([sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',item.id),sb.from('profiles').select('display_name').eq('id',item.user_id).maybeSingle()]);
+      const starterName = starter?.display_name || 'Een BASECAMP-avonturier';
       const canManage = item.user_id === me.id || me.role === 'admin';
-      html += `<div class="challenge-entry"><div class="eyebrow">AFGELOPEN CHALLENGE</div><h3 style="font:19px Georgia;margin:6px 0">${esc(item.title)}</h3><p class="muted">${esc(item.description)}</p><div class="muted">${count||0} inzendingen · ${new Date(item.starts_at).toLocaleDateString('nl-BE')} – ${new Date(item.ends_at).toLocaleDateString('nl-BE')}</div><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:9px"><button class="btn light" onclick="showPastChallenge('${item.id}')">Bekijk inzendingen →</button>${canManage?`<button class="btn light" onclick="editChallenge('${item.id}')">✎ Bewerken</button><button class="btn danger" onclick="deleteChallenge('${item.id}')">Verwijderen</button>`:''}</div></div>`;
+      html += `<div class="challenge-entry"><div class="eyebrow">AFGELOPEN CHALLENGE</div><h3 style="font:19px Georgia;margin:6px 0">${esc(item.title)}</h3><p class="muted">${esc(item.description)}</p><div class="muted">Gestart door <b>${esc(starterName)}</b> · ${count||0} inzendingen · ${new Date(item.starts_at).toLocaleDateString('nl-BE')} – ${new Date(item.ends_at).toLocaleDateString('nl-BE')}</div><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:9px"><button class="btn light" onclick="showPastChallenge('${item.id}')">Bekijk inzendingen →</button>${canManage?`<button class="btn light" onclick="editChallenge('${item.id}')">✎ Bewerken</button><button class="btn danger" onclick="deleteChallenge('${item.id}')">Verwijderen</button>`:''}</div></div>`;
     }
   }
   return html;
