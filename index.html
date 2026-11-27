@@ -1326,10 +1326,11 @@ async function challengesWidget(location='community') {
   const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',challenge.id);
   const remaining = Math.max(0,Math.ceil((new Date(challenge.ends_at)-Date.now())/86400000));
   const ownEntry = await sb.from('basecamp_challenge_entries').select('id').eq('challenge_id',challenge.id).eq('user_id',me.id).maybeSingle();
+  const canManage = challenge.user_id === me.id || me.role === 'admin';
   return `<section class="challenge-shell">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="eyebrow">DOE MEE AAN DE UITDAGING</div><span class="tag">${remaining===0?'Laatste dag':`Nog ${remaining} ${remaining===1?'dag':'dagen'}`}</span></div>
     <div class="challenge-hero"><div class="eyebrow">ACTIEVE CHALLENGE</div><h3 style="font:25px Georgia;margin:8px 0;color:#fff">${esc(challenge.title)}</h3><p style="line-height:1.65;margin:0;color:#eef2e9">${esc(challenge.description)}</p></div>
-    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span class="muted">📷 ${count||0} ${count===1?'inzending':'inzendingen'} · Eindigt ${new Date(challenge.ends_at).toLocaleDateString('nl-BE',{day:'numeric',month:'long'})}</span><div class="row" style="gap:7px;flex-wrap:wrap">${ownEntry.data?'<span class="tag">✓ Jij doet mee</span>':`<button class="btn gold" onclick="openChallengeEntry('${challenge.id}')">📷 ${location==='home'?'Doe mee':'Voeg jouw foto toe'}</button>`}<button class="btn light" onclick="go('challenges')">Bekijk challenge →</button></div></div>
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span class="muted">📷 ${count||0} ${count===1?'inzending':'inzendingen'} · Eindigt ${new Date(challenge.ends_at).toLocaleDateString('nl-BE',{day:'numeric',month:'long'})}</span><div class="row" style="gap:7px;flex-wrap:wrap">${ownEntry.data?'<span class="tag">✓ Jij doet mee</span>':`<button class="btn gold" onclick="openChallengeEntry('${challenge.id}')">📷 ${location==='home'?'Doe mee':'Voeg jouw foto toe'}</button>`}<button class="btn light" onclick="go('challenges')">Bekijk challenge →</button>${canManage?`<button class="btn light" onclick="editChallenge('${challenge.id}')">✎ Bewerken</button><button class="btn danger" onclick="deleteChallenge('${challenge.id}')">Verwijderen</button>`:''}</div></div>
   </section>`;
 }
 
@@ -1345,7 +1346,8 @@ async function challengesPage() {
   else {
     for (const item of past) {
       const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',item.id);
-      html += `<div class="challenge-entry"><div class="eyebrow">AFGELOPEN CHALLENGE</div><h3 style="font:19px Georgia;margin:6px 0">${esc(item.title)}</h3><p class="muted">${esc(item.description)}</p><div class="muted">${count||0} inzendingen · ${new Date(item.starts_at).toLocaleDateString('nl-BE')} – ${new Date(item.ends_at).toLocaleDateString('nl-BE')}</div><button class="btn light" style="margin-top:9px" onclick="showPastChallenge('${item.id}')">Bekijk inzendingen →</button></div>`;
+      const canManage = item.user_id === me.id || me.role === 'admin';
+      html += `<div class="challenge-entry"><div class="eyebrow">AFGELOPEN CHALLENGE</div><h3 style="font:19px Georgia;margin:6px 0">${esc(item.title)}</h3><p class="muted">${esc(item.description)}</p><div class="muted">${count||0} inzendingen · ${new Date(item.starts_at).toLocaleDateString('nl-BE')} – ${new Date(item.ends_at).toLocaleDateString('nl-BE')}</div><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:9px"><button class="btn light" onclick="showPastChallenge('${item.id}')">Bekijk inzendingen →</button>${canManage?`<button class="btn light" onclick="editChallenge('${item.id}')">✎ Bewerken</button><button class="btn danger" onclick="deleteChallenge('${item.id}')">Verwijderen</button>`:''}</div></div>`;
     }
   }
   return html;
@@ -1363,8 +1365,47 @@ async function openChallengeCreate() {
     const button=dialog.querySelector('[data-create]');button.disabled=true;button.textContent='Publiceren…';
     const {error}=await sb.from('basecamp_challenges').insert({title,description,duration_days});
     if(error){button.disabled=false;button.textContent='Publiceren';alert(error.code==='23505'?'Er loopt ondertussen al een andere challenge.':error.message);return;}
-    close();alert('Je challenge is gepubliceerd!');await go('challenges');
+    close();
+    const successBackdrop=document.createElement('div');successBackdrop.className='bc-confirm-backdrop';
+    const successDialog=document.createElement('div');successDialog.className='bc-confirm';successDialog.setAttribute('role','dialog');successDialog.setAttribute('aria-modal','true');
+    successDialog.innerHTML=`<div class="bc-confirm-mark" style="background:#e5eddf;color:#496b4d">✓</div><div class="eyebrow" style="margin-bottom:7px">BASECAMP · NIEUWE UITDAGING</div><h3>Je challenge is gestart!</h3><p><strong style="color:#344536">${esc(title)}</strong> staat nu klaar voor de community. Andere avonturiers kunnen de uitdaging bekijken en hun foto toevoegen. Veel plezier!</p><div class="bc-confirm-actions"><button class="btn" data-view>Bekijk challenge</button></div>`;
+    successBackdrop.appendChild(successDialog);document.body.appendChild(successBackdrop);
+    const finishSuccess=async()=>{successBackdrop.remove();await go('challenges');};
+    successDialog.querySelector('[data-view]').onclick=finishSuccess;
+    successBackdrop.onclick=e=>{if(e.target===successBackdrop)finishSuccess();};
   };
+}
+
+async function editChallenge(challengeId) {
+  const {data:challenge,error}=await sb.from('basecamp_challenges').select('id,user_id,title,description,duration_days,starts_at,ends_at,status').eq('id',challengeId).single();
+  if(error||!challenge){alert('De challenge kon niet worden geladen.');return;}
+  if(challenge.user_id!==me.id && me.role!=='admin'){alert('Alleen de plaatser of een beheerder kan deze challenge aanpassen.');return;}
+  const backdrop=document.createElement('div');backdrop.className='bc-confirm-backdrop';
+  const dialog=document.createElement('div');dialog.className='bc-confirm';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+  dialog.innerHTML=`<div class="bc-confirm-mark">✎</div><h3>Challenge aanpassen</h3><p>Pas de titel of omschrijving aan. De einddatum blijft ongewijzigd.</p><label for="editChallengeTitle">Titel</label><input id="editChallengeTitle" class="challenge-input" maxlength="100"><label for="editChallengeDescription">Wat is de uitdaging?</label><textarea id="editChallengeDescription" class="challenge-input" rows="4" maxlength="1000"></textarea><div class="bc-confirm-actions"><button class="btn light" data-close>Annuleren</button><button class="btn" data-save>Opslaan</button></div>`;
+  backdrop.appendChild(dialog);document.body.appendChild(backdrop);
+  dialog.querySelector('#editChallengeTitle').value=challenge.title||'';dialog.querySelector('#editChallengeDescription').value=challenge.description||'';
+  const close=()=>backdrop.remove();dialog.querySelector('[data-close]').onclick=close;backdrop.onclick=e=>{if(e.target===backdrop)close();};
+  dialog.querySelector('[data-save]').onclick=async()=>{const title=dialog.querySelector('#editChallengeTitle').value.trim(),description=dialog.querySelector('#editChallengeDescription').value.trim();if(title.length<3||description.length<3){alert('Vul een titel en een duidelijke omschrijving in.');return;}const button=dialog.querySelector('[data-save]');button.disabled=true;button.textContent='Opslaan…';const {error}=await sb.from('basecamp_challenges').update({title,description}).eq('id',challengeId);if(error){button.disabled=false;button.textContent='Opslaan';alert('Aanpassen lukte niet: '+error.message);return;}close();await render();};
+}
+
+async function deleteChallenge(challengeId) {
+  const {data:challenge,error}=await sb.from('basecamp_challenges').select('id,user_id,title').eq('id',challengeId).single();
+  if(error||!challenge){alert('De challenge kon niet worden geladen.');return;}
+  if(challenge.user_id!==me.id && me.role!=='admin'){alert('Alleen de plaatser of een beheerder kan deze challenge verwijderen.');return;}
+  const confirmed=await new Promise(resolve=>{const b=document.createElement('div');b.className='bc-confirm-backdrop';const d=document.createElement('div');d.className='bc-confirm';d.innerHTML=`<div class=\"bc-confirm-mark\">!</div><h3>Challenge verwijderen?</h3><p>Weet je zeker dat je “${esc(challenge.title)}” wilt verwijderen? Alle foto-inzendingen, likes en reacties worden ook verwijderd. Dit kan niet ongedaan worden gemaakt.</p><div class=\"bc-confirm-actions\"><button class=\"btn light\" data-no>Annuleren</button><button class=\"btn danger\" data-yes>Verwijderen</button></div>`;b.appendChild(d);document.body.appendChild(b);const done=v=>{b.remove();resolve(v);};d.querySelector('[data-no]').onclick=()=>done(false);d.querySelector('[data-yes]').onclick=()=>done(true);b.onclick=e=>{if(e.target===b)done(false);};});
+  if(!confirmed)return;
+  const {data:entries,error:entriesError}=await sb.from('basecamp_challenge_entries').select('id').eq('challenge_id',challengeId);
+  if(entriesError){alert('De inzendingen konden niet worden opgehaald: '+entriesError.message);return;}
+  const entryIds=(entries||[]).map(x=>x.id);
+  if(entryIds.length){
+    const comments=await sb.from('basecamp_challenge_comments').delete().in('entry_id',entryIds);if(comments.error){alert('Reacties verwijderen lukte niet: '+comments.error.message);return;}
+    const likes=await sb.from('basecamp_challenge_likes').delete().in('entry_id',entryIds);if(likes.error){alert('Likes verwijderen lukte niet: '+likes.error.message);return;}
+    const removedEntries=await sb.from('basecamp_challenge_entries').delete().eq('challenge_id',challengeId);if(removedEntries.error){alert('Inzendingen verwijderen lukte niet: '+removedEntries.error.message);return;}
+  }
+  const removed=await sb.from('basecamp_challenges').delete().eq('id',challengeId);
+  if(removed.error){alert('Challenge verwijderen lukte niet: '+removed.error.message);return;}
+  await render();
 }
 
 async function openChallengeEntry(challengeId) {
