@@ -213,6 +213,22 @@ button,.btn,.tabs button,.calendar-filters button{touch-action:manipulation}
 .chat-participants-list .profile-identity-copy{font-size:11px}
 @media(max-width:680px){.chat-participants{padding:9px 10px}.chat-participants-list{gap:10px}.chat-participants-list .profile-identity{gap:5px}.chat-participants-list .avatar{width:30px;height:30px}}
 
+
+.challenge-shell{background:#fff;border:1px solid var(--line);border-radius:14px;padding:17px;margin:16px 0;box-shadow:0 3px 12px rgba(38,61,48,.045)}
+.challenge-hero{background:linear-gradient(125deg,#263d30,#607b58);color:#fff;border-radius:12px;padding:20px;margin:10px 0 15px}
+.challenge-hero .eyebrow{color:#e6d39e}
+.challenge-entry{background:#fbfaf6;border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.challenge-entry img{width:100%;max-height:340px;object-fit:cover;border-radius:9px;display:block}
+.challenge-entry-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.challenge-input{width:100%;box-sizing:border-box;border:1px solid #d8d1c1;border-radius:9px;padding:11px;background:#fffdf8;color:#263d30;font:inherit;margin:5px 0 12px}
+.challenge-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.challenge-example{background:#f4f2e9;border:1px solid #e4ddca;border-left:4px solid #a68a4d;border-radius:10px;padding:12px 14px;margin:12px 0 16px;color:#344536}
+.challenge-example .eyebrow{font-size:9px;font-weight:850;letter-spacing:1px;color:#806b3e;margin-bottom:6px}
+.challenge-example strong{display:block;font: bold 16px Georgia,serif;margin-bottom:5px}
+.challenge-example p{font-size:13px;line-height:1.55;margin:0 0 8px}
+.challenge-example span{display:block;font-size:11px;line-height:1.5;color:#687466}
+@media(max-width:600px){.challenge-grid{grid-template-columns:1fr}.challenge-shell{padding:13px}}
+
 </style>
 </head>
 
@@ -749,6 +765,7 @@ async function render() {
     const html =
       page === 'home' ? await home() :
       page === 'community' ? await community() :
+      page === 'challenges' ? await challengesPage() :
       page === 'discover' ? await discover() :
       page === 'calendar' ? await adventureCalendar() :
       page === 'adventurers' ? await adventurers() :
@@ -1184,6 +1201,8 @@ async function home() {
       <button class="btn gold" onclick="go('discover')">Ontdek onze avonturen →</button>
     </div>
 
+    ${await challengesWidget('home')}
+
     <section style="margin:28px 0 24px">
       <div class="eyebrow">WIE ZIJN WE?</div>
       <h2 style="font:25px Georgia;margin:7px 0 12px">Kleine groepen. Groot avontuur.</h2>
@@ -1279,8 +1298,113 @@ async function setCommunityMode(mode) { communityMode = ['adventurers','chats'].
 
 async function community() {
   const heading = section('DE ONTMOETINGSPLAATS','De community','Deel je plannen, stel vragen en inspireer andere avonturiers.');
+  const challengeBlock = communityMode === 'feed' ? await challengesWidget('community') : '';
   const content = communityMode === 'adventurers' ? await adventurers(false) : communityMode === 'chats' ? await chat() : composer() + await postsHtml();
-  return heading + communityTabs(communityMode) + content;
+  return heading + challengeBlock + communityTabs(communityMode) + content;
+}
+
+// =============================================
+// CHALLENGES
+// =============================================
+async function getActiveChallenge() {
+  const now = new Date().toISOString();
+  const {data,error} = await sb.from('basecamp_challenges')
+    .select('id,user_id,title,description,duration_days,starts_at,ends_at,status,created_at')
+    .eq('status','active').gt('ends_at',now).order('created_at',{ascending:false}).limit(1).maybeSingle();
+  if (error && !/0 rows|JSON object requested/i.test(error.message || '')) throw error;
+  return data || null;
+}
+
+async function challengesWidget(location='community') {
+  let challenge;
+  try { challenge = await getActiveChallenge(); }
+  catch (error) { console.warn('Challenges konden niet worden geladen:',error); return ''; }
+  if (!challenge) return `<section class="challenge-shell"><div class="eyebrow">SAMEN OP UITDAGING</div><h3 style="font:21px Georgia;margin:7px 0">Challenges</h3><p class="muted">Er loopt momenteel geen challenge. Start zelf een leuke uitdaging en nodig andere avonturiers uit om mee te doen.</p><button class="btn" onclick="openChallengeCreate()">＋ Start een challenge</button><button class="btn light" style="margin-left:6px" onclick="go('challenges')">Bekijk afgelopen challenges</button></section>`;
+  const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',challenge.id);
+  const remaining = Math.max(0,Math.ceil((new Date(challenge.ends_at)-Date.now())/86400000));
+  const ownEntry = await sb.from('basecamp_challenge_entries').select('id').eq('challenge_id',challenge.id).eq('user_id',me.id).maybeSingle();
+  return `<section class="challenge-shell">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div class="eyebrow">DOE MEE AAN DE UITDAGING</div><span class="tag">${remaining===0?'Laatste dag':`Nog ${remaining} ${remaining===1?'dag':'dagen'}`}</span></div>
+    <div class="challenge-hero"><div class="eyebrow">ACTIEVE CHALLENGE</div><h3 style="font:25px Georgia;margin:8px 0;color:#fff">${esc(challenge.title)}</h3><p style="line-height:1.65;margin:0;color:#eef2e9">${esc(challenge.description)}</p></div>
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span class="muted">📷 ${count||0} ${count===1?'inzending':'inzendingen'} · Eindigt ${new Date(challenge.ends_at).toLocaleDateString('nl-BE',{day:'numeric',month:'long'})}</span><div class="row" style="gap:7px;flex-wrap:wrap">${ownEntry.data?'<span class="tag">✓ Jij doet mee</span>':`<button class="btn gold" onclick="openChallengeEntry('${challenge.id}')">📷 ${location==='home'?'Doe mee':'Voeg jouw foto toe'}</button>`}<button class="btn light" onclick="go('challenges')">Bekijk challenge →</button></div></div>
+  </section>`;
+}
+
+async function challengesPage() {
+  const active = await getActiveChallenge();
+  const {data:past,error} = await sb.from('basecamp_challenges').select('id,title,description,duration_days,starts_at,ends_at,status,user_id').eq('status','completed').order('ends_at',{ascending:false}).limit(20);
+  if (error) throw error;
+  let html = section('SAMEN OP UITDAGING','Challenges','Kleine uitdagingen, gedeelde avonturen en inspiratie van andere BASECAMP-leden.');
+  if (active) html += await challengesWidget('community') + await challengeEntriesHtml(active.id);
+  else html += `<div class="challenge-shell"><h3 style="font:21px Georgia">Er loopt momenteel geen challenge</h3><p class="muted">Iedereen kan een nieuwe uitdaging starten. Kies een looptijd en nodig de community uit om mee te doen.</p><button class="btn" onclick="openChallengeCreate()">＋ Start een challenge</button></div>`;
+  html += `<h3 style="font:21px Georgia;margin:25px 0 8px">Afgelopen challenges</h3>`;
+  if (!past?.length) html += '<p class="muted">Afgelopen challenges verschijnen hier zodra de eerste uitdaging is afgerond.</p>';
+  else {
+    for (const item of past) {
+      const {count} = await sb.from('basecamp_challenge_entries').select('id',{count:'exact',head:true}).eq('challenge_id',item.id);
+      html += `<div class="challenge-entry"><div class="eyebrow">AFGELOPEN CHALLENGE</div><h3 style="font:19px Georgia;margin:6px 0">${esc(item.title)}</h3><p class="muted">${esc(item.description)}</p><div class="muted">${count||0} inzendingen · ${new Date(item.starts_at).toLocaleDateString('nl-BE')} – ${new Date(item.ends_at).toLocaleDateString('nl-BE')}</div><button class="btn light" style="margin-top:9px" onclick="showPastChallenge('${item.id}')">Bekijk inzendingen →</button></div>`;
+    }
+  }
+  return html;
+}
+
+async function openChallengeCreate() {
+  const backdrop=document.createElement('div');backdrop.className='bc-confirm-backdrop';
+  const dialog=document.createElement('div');dialog.className='bc-confirm';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+  dialog.innerHTML=`<div class="bc-confirm-mark">⚑</div><h3>Start een challenge</h3><p>Verzin een leuke, haalbare uitdaging waar andere avonturiers aan kunnen deelnemen. Een goede challenge is eenvoudig, duidelijk en voor veel leden uitvoerbaar.</p><div class="challenge-example"><div class="eyebrow">VOORBEELD VAN EEN GOEDE CHALLENGE</div><strong>Mijn mooiste bivak</strong><p>Deel één foto van een plek waar je ooit hebt gekampeerd of gebivakkeerd. Vertel er kort bij wat deze plek zo bijzonder maakte. Dat mag een wildkampeerplek in de bergen zijn, maar evengoed een eenvoudige nacht in de Ardennen.</p><span>Waarom werkt dit? Iedereen kan meedoen, ook met een oude foto, en het nodigt uit om verhalen uit te wisselen.</span></div><label for="challengeTitle">Titel</label><input id="challengeTitle" class="challenge-input" maxlength="100" placeholder="Bijvoorbeeld: Mijn mooiste bivak"><label for="challengeDescription">Wat is de uitdaging?</label><textarea id="challengeDescription" class="challenge-input" rows="4" maxlength="1000" placeholder="Leg uit wat deelnemers kunnen delen..."></textarea><label for="challengeDuration">Hoelang loopt de challenge?</label><select id="challengeDuration" class="challenge-input"><option value="3">3 dagen</option><option value="7" selected>7 dagen</option><option value="14">14 dagen</option><option value="30">30 dagen</option></select><div class="bc-confirm-actions"><button class="btn light" data-close>Annuleren</button><button class="btn" data-create>Publiceren</button></div>`;
+  backdrop.appendChild(dialog);document.body.appendChild(backdrop);
+  const close=()=>backdrop.remove();dialog.querySelector('[data-close]').onclick=close;backdrop.onclick=e=>{if(e.target===backdrop)close();};
+  dialog.querySelector('[data-create]').onclick=async()=>{
+    const title=dialog.querySelector('#challengeTitle').value.trim(),description=dialog.querySelector('#challengeDescription').value.trim(),duration_days=Number(dialog.querySelector('#challengeDuration').value);
+    if(title.length<3||description.length<3){alert('Vul een titel en een duidelijke omschrijving in.');return;}
+    const button=dialog.querySelector('[data-create]');button.disabled=true;button.textContent='Publiceren…';
+    const {error}=await sb.from('basecamp_challenges').insert({title,description,duration_days});
+    if(error){button.disabled=false;button.textContent='Publiceren';alert(error.code==='23505'?'Er loopt ondertussen al een andere challenge.':error.message);return;}
+    close();alert('Je challenge is gepubliceerd!');await go('challenges');
+  };
+}
+
+async function openChallengeEntry(challengeId) {
+  const backdrop=document.createElement('div');backdrop.className='bc-confirm-backdrop';
+  const dialog=document.createElement('div');dialog.className='bc-confirm';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+  dialog.innerHTML=`<div class="bc-confirm-mark">📷</div><h3>Doe mee aan de challenge</h3><p>Voeg één foto toe met eventueel een korte toelichting. Je kunt later je inzending aanpassen.</p><label for="challengePhoto">Jouw foto</label><input id="challengePhoto" class="challenge-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><label for="challengeCaption">Korte toelichting (optioneel)</label><textarea id="challengeCaption" class="challenge-input" rows="3" maxlength="500" placeholder="Vertel iets over je foto..."></textarea><div class="bc-confirm-actions"><button class="btn light" data-close>Annuleren</button><button class="btn" data-submit>Inzenden</button></div>`;
+  backdrop.appendChild(dialog);document.body.appendChild(backdrop);const close=()=>backdrop.remove();dialog.querySelector('[data-close]').onclick=close;backdrop.onclick=e=>{if(e.target===backdrop)close();};
+  dialog.querySelector('[data-submit]').onclick=async()=>{
+    const file=dialog.querySelector('#challengePhoto').files[0],caption=dialog.querySelector('#challengeCaption').value.trim();
+    if(!file){alert('Kies eerst een foto.');return;}if(!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)||file.size>8*1024*1024){alert('Kies een JPG-, PNG-, WebP- of GIF-afbeelding van maximaal 8 MB.');return;}
+    const button=dialog.querySelector('[data-submit]');button.disabled=true;button.textContent='Uploaden…';
+    const ext=({ 'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'})[file.type];const path=me.id+'/challenge-'+challengeId+'-'+Date.now()+'.'+ext;
+    const uploaded=await sb.storage.from('post-images').upload(path,file,{contentType:file.type,upsert:false});
+    if(uploaded.error){button.disabled=false;button.textContent='Inzenden';alert(uploaded.error.message);return;}
+    const image_url=sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+    const {error}=await sb.from('basecamp_challenge_entries').insert({challenge_id:challengeId,image_url,caption});
+    if(error){await sb.storage.from('post-images').remove([path]);button.disabled=false;button.textContent='Inzenden';alert(error.code==='23505'?'Je hebt al een foto ingezonden voor deze challenge.':error.message);return;}
+    close();await go('challenges');
+  };
+}
+
+async function challengeEntriesHtml(challengeId) {
+  const {data:entries,error}=await sb.from('basecamp_challenge_entries').select('id,user_id,image_url,caption,created_at').eq('challenge_id',challengeId).order('created_at',{ascending:false});
+  if(error) throw error;if(!entries?.length)return '<p class="muted">Er zijn nog geen foto’s ingezonden. Misschien trap jij af?</p>';
+  const ids=[...new Set(entries.map(x=>x.user_id))];const {data:profiles}=await sb.from('profiles').select('id,display_name,avatar_url').in('id',ids);const people=Object.fromEntries((profiles||[]).map(x=>[x.id,x]));
+  const entryIds=entries.map(x=>x.id);const [{data:likes},{data:comments}]=await Promise.all([sb.from('basecamp_challenge_likes').select('id,entry_id,user_id').in('entry_id',entryIds),sb.from('basecamp_challenge_comments').select('id,entry_id,user_id,content,created_at').in('entry_id',entryIds).order('created_at')]);
+  return `<h3 style="font:21px Georgia;margin:22px 0 8px">Foto’s van deelnemers</h3><div class="challenge-grid">${entries.map(entry=>{const person=people[entry.user_id]||{};const entryLikes=(likes||[]).filter(x=>x.entry_id===entry.id);const entryComments=(comments||[]).filter(x=>x.entry_id===entry.id);return `<article class="challenge-entry"><div class="row" style="align-items:center;gap:8px;margin-bottom:9px">${avatarMarkup(person.avatar_url,person.display_name||'Avonturier')}<b>${esc(person.display_name||'Avonturier')}</b></div><img src="${esc(entry.image_url)}" alt="Challenge-inzending" loading="lazy">${entry.caption?`<p style="line-height:1.55">${esc(entry.caption)}</p>`:''}<div class="challenge-entry-actions"><button class="btn light" onclick="toggleChallengeLike('${entry.id}')">♡ ${entryLikes.length} ${entryLikes.length===1?'like':'likes'}${entryLikes.some(x=>x.user_id===me.id)?' · Vind ik leuk':''}</button><span class="muted">${entryComments.length} reacties</span></div><div style="margin-top:10px">${entryComments.map(c=>`<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(people[c.user_id]?.display_name||'Avonturier')}:</b> ${esc(c.content)}</div>`).join('')}<div class="row" style="gap:6px;margin-top:7px"><input class="challenge-input" style="margin:0;flex:1;min-width:0" id="challengeComment-${entry.id}" placeholder="Schrijf een reactie..."><button class="btn" onclick="addChallengeComment('${entry.id}')">Reageer</button></div></div></article>`;}).join('')}</div>`;
+}
+
+async function toggleChallengeLike(entryId) {
+  const {data:existing}=await sb.from('basecamp_challenge_likes').select('id').eq('entry_id',entryId).eq('user_id',me.id).maybeSingle();
+  const result=existing?await sb.from('basecamp_challenge_likes').delete().eq('id',existing.id):await sb.from('basecamp_challenge_likes').insert({entry_id:entryId});
+  if(result.error){alert(result.error.message);return;}await render();
+}
+
+async function addChallengeComment(entryId) {
+  const input=$('challengeComment-'+entryId),content=input?.value.trim();if(!content)return;
+  const {error}=await sb.from('basecamp_challenge_comments').insert({entry_id:entryId,content});if(error){alert(error.message);return;}await render();
+}
+
+async function showPastChallenge(challengeId) {
+  const {data:challenge,error}=await sb.from('basecamp_challenges').select('id,title,description,starts_at,ends_at').eq('id',challengeId).single();if(error){alert(error.message);return;}
+  const html=await challengeEntriesHtml(challengeId);const backdrop=document.createElement('div');backdrop.className='bc-confirm-backdrop';const dialog=document.createElement('div');dialog.className='bc-confirm';dialog.style.maxWidth='760px';dialog.style.maxHeight='85vh';dialog.style.overflowY='auto';dialog.innerHTML=`<h3>${esc(challenge.title)}</h3><p>${esc(challenge.description)}</p><div class="muted">${new Date(challenge.starts_at).toLocaleDateString('nl-BE')} – ${new Date(challenge.ends_at).toLocaleDateString('nl-BE')}</div><div>${html}</div><div class="bc-confirm-actions"><button class="btn light" data-close>Sluiten</button></div>`;backdrop.appendChild(dialog);document.body.appendChild(backdrop);dialog.querySelector('[data-close]').onclick=()=>backdrop.remove();backdrop.onclick=e=>{if(e.target===backdrop)backdrop.remove();};
 }
 
 function basecampTextModal(title, description, initialValue = '', placeholder = 'Schrijf hier...') {
