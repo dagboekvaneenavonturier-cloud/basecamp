@@ -1307,6 +1307,9 @@ async function community() {
 // CHALLENGES
 // =============================================
 async function getActiveChallenge() {
+  // Werk verlopen challenges eerst bij, zodat ze meteen in het archief verschijnen.
+  const {error:refreshError} = await sb.rpc('refresh_basecamp_challenges');
+  if (refreshError) console.warn('Challenges konden niet automatisch worden bijgewerkt:',refreshError);
   const now = new Date().toISOString();
   const {data,error} = await sb.from('basecamp_challenges')
     .select('id,user_id,title,description,duration_days,starts_at,ends_at,status,created_at')
