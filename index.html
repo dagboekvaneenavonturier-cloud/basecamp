@@ -1622,7 +1622,7 @@ async function showCompassResults() {
         ${t.price != null && t.price !== '' ? `<p><b>Prijs:</b> € ${Number(t.price).toLocaleString('nl-BE',{maximumFractionDigits:0})}</p>` : ''}
         ${p.preparation_level ? `<p class="muted"><b>Voorbereiding:</b> ${{geen:'Liever geen voorbereiding',dag:'1 voorbereidingsdag',weekend:'Een voorbereidingsweekend',traject:'Een volledig voorbereidingstraject'}[p.preparation_level] || 'Niet opgegeven'}</p>` : ''}
         ${p.required_skills?.length?`<p class="muted"><b>Vaardigheden:</b> ${p.required_skills.map(x=>esc((COMPASS_OPTIONS.required_skills.find(o=>o[0]===x)||[x,x])[1])).join(', ')}</p>`:''}
-        ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
+        ${t.website_url?`<a class="btn" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info en boeken ↗</a>`:''}
         <button class="btn ${myInterestSet.has(t.id)?'light':''}" onclick="toggleTripInterest('${t.id}',${myInterestSet.has(t.id)})">${myInterestSet.has(t.id)?'✓ Je hebt interesse getoond':'Ik heb interesse'}</button>
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
       </div>`;
@@ -1725,7 +1725,7 @@ async function discover() {
         <b>${t.start_date ? new Date(t.start_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}${t.end_date ? ' – ' + new Date(t.end_date + 'T12:00:00').toLocaleDateString('nl-BE') : ''}</b>
         <p class="muted">${esc(t.description || '')}</p>
         ${preparationProfiles[t.id]?.preparation_level && preparationProfiles[t.id].preparation_level !== 'geen' ? `<div class="notice" style="margin:10px 0"><b>Voorbereiding voorzien</b><br>${({dag:'1 voorbereidingsdag',weekend:'Een voorbereidingsweekend',traject:'Een volledig voorbereidingstraject'})[preparationProfiles[t.id].preparation_level] || ''}</div>` : ''}
-        ${t.website_url?`<a class="btn light" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info op onze website ↗</a>`:''}
+        ${t.website_url?`<a class="btn" href="${esc(t.website_url)}" target="_blank" rel="noopener noreferrer">Meer info en boeken ↗</a>`:''}
         <button class="btn ${interested ? 'light' : ''}" onclick="toggleTripInterest('${t.id}',${interested})">${interested ? '✓ Je hebt interesse getoond' : 'Ik heb interesse'}</button>
         <button class="btn light" onclick="openTripDiscussion('${t.id}')">Vragen & gesprek →</button>
         <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><b>Wie gaat er mee?</b>
