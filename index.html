@@ -1444,8 +1444,19 @@ async function toggleChallengeLike(entryId) {
 }
 
 async function addChallengeComment(entryId) {
-  const input=$('challengeComment-'+entryId),content=input?.value.trim();if(!content)return;
-  const {error}=await sb.from('basecamp_challenge_comments').insert({entry_id:entryId,content});if(error){alert(error.message);return;}await render();
+  const input=$('challengeComment-'+entryId);
+  const content=input?.value.trim();
+
+  if(!content)return;
+
+  const {error}=await sb.from('basecamp_challenge_comments').insert({
+    entry_id:entryId,
+    user_id:me.id,
+    content:content
+  });
+
+  if(error){alert(error.message);return;}
+  await render();
 }
 
 async function showPastChallenge(challengeId) {
