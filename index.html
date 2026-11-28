@@ -81,6 +81,9 @@ textarea{min-height:80px}
 .bc-confirm-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .bc-confirm-actions button{min-height:40px;border-radius:22px;padding:9px 15px}
 .bc-confirm-actions .danger{background:#8b493d;color:white;border:0;font-weight:700}
+.bc-modal-textarea{display:block;width:100%;min-height:132px;box-sizing:border-box;margin:0 0 16px;padding:13px 14px;border:1px solid #d8d1c1;border-radius:12px;background:#fffdf8;color:#263d30;font:inherit;font-size:14px;line-height:1.55;resize:vertical;outline:none;transition:border-color .18s,box-shadow .18s}
+.bc-modal-textarea:focus{border-color:#78906f;box-shadow:0 0 0 3px rgba(120,144,111,.16)}
+.bc-modal-textarea::placeholder{color:#9a9b8e}
 .notice{background:#f4ead1;padding:12px;border-radius:9px;font-size:12px;color:#66552e;margin:12px 0}
 
 /* Warme BASECAMP-toegangskaart voor groepen waarvan je nog geen lid bent */
@@ -1490,8 +1493,10 @@ async function challengeEntriesHtml(challengeId) {
       <div style="margin-top:10px">
         ${entryComments.map(c=>{
           const commenter=people[c.user_id]||{};
-          return `<div style="padding:6px 0;border-top:1px solid var(--line)">
-            <b>${esc(commenter.display_name||'Avonturier')}:</b> ${esc(c.content)}
+          const ownComment=c.user_id===me?.id;
+          return `<div style="padding:8px 0;border-top:1px solid var(--line)">
+            <div><b>${esc(commenter.display_name||'Avonturier')}:</b> ${esc(c.content)}</div>
+            ${ownComment?`<div class="row" style="gap:6px;margin-top:5px;justify-content:flex-end"><button class="btn light" style="padding:5px 10px;font-size:12px" onclick="editChallengeComment('${c.id}')">Bewerken</button><button class="btn light" style="padding:5px 10px;font-size:12px;color:#8b493d" onclick="deleteChallengeComment('${c.id}')">Verwijderen</button></div>`:''}
           </div>`;
         }).join('')}
         <div class="row" style="gap:6px;margin-top:7px">
@@ -1560,6 +1565,52 @@ async function addChallengeComment(entryId) {
   await render();
 }
 
+async function editChallengeComment(commentId) {
+  if(!me?.id) return;
+  const {data,error}=await sb.from('basecamp_challenge_comments')
+    .select('content')
+    .eq('id',commentId)
+    .eq('user_id',me.id)
+    .maybeSingle();
+
+  if(error || !data) {
+    alert('Je reactie kon niet worden geladen.');
+    return;
+  }
+
+  const content=await basecampTextModal('Reactie bewerken','Pas je challenge-reactie aan.',data.content||'');
+  if(content===null) return;
+
+  const {error:updateError}=await sb.from('basecamp_challenge_comments')
+    .update({content})
+    .eq('id',commentId)
+    .eq('user_id',me.id);
+
+  if(updateError) {
+    alert('Reactie bewerken lukte niet: '+updateError.message);
+    return;
+  }
+
+  await render();
+}
+
+async function deleteChallengeComment(commentId) {
+  if(!me?.id) return;
+  if(!await confirmChatDelete('Reactie verwijderen?','Deze reactie wordt definitief uit de challenge verwijderd. Deze actie kun je niet ongedaan maken.')) return;
+
+  const {error}=await sb.from('basecamp_challenge_comments')
+    .delete()
+    .eq('id',commentId)
+    .eq('user_id',me.id);
+
+  if(error) {
+    alert('Reactie verwijderen lukte niet: '+error.message);
+    return;
+  }
+
+  await render();
+}
+
 async function showPastChallenge(challengeId) {
   const {data:challenge,error}=await sb.from('basecamp_challenges').select('id,title,description,starts_at,ends_at').eq('id',challengeId).single();if(error){alert(error.message);return;}
   const html=await challengeEntriesHtml(challengeId);const backdrop=document.createElement('div');backdrop.className='bc-confirm-backdrop';const dialog=document.createElement('div');dialog.className='bc-confirm';dialog.style.maxWidth='760px';dialog.style.maxHeight='85vh';dialog.style.overflowY='auto';dialog.innerHTML=`<h3>${esc(challenge.title)}</h3><p>${esc(challenge.description)}</p><div class="muted">${new Date(challenge.starts_at).toLocaleDateString('nl-BE')} – ${new Date(challenge.ends_at).toLocaleDateString('nl-BE')}</div><div>${html}</div><div class="bc-confirm-actions"><button class="btn light" data-close>Sluiten</button></div>`;backdrop.appendChild(dialog);document.body.appendChild(backdrop);dialog.querySelector('[data-close]').onclick=()=>backdrop.remove();backdrop.onclick=e=>{if(e.target===backdrop)backdrop.remove();};
@@ -1569,7 +1620,7 @@ function basecampTextModal(title, description, initialValue = '', placeholder = 
   return new Promise(resolve => {
     const backdrop = document.createElement('div'); backdrop.className = 'bc-confirm-backdrop';
     const dialog = document.createElement('div'); dialog.className = 'bc-confirm'; dialog.setAttribute('role','dialog'); dialog.setAttribute('aria-modal','true');
-    dialog.innerHTML = `<div class="bc-confirm-mark">✎</div><h3></h3><p></p><textarea class="bc-modal-textarea" rows="5" style="width:100%;box-sizing:border-box;margin:0 0 16px;padding:12px;border:1px solid #d8d1c1;border-radius:10px;background:#fffdf8;color:#263d30;font:inherit;resize:vertical"></textarea><div class="bc-confirm-actions"><button type="button" class="btn light" data-choice="cancel">Annuleren</button><button type="button" class="btn" data-choice="save">Opslaan</button></div>`;
+    dialog.innerHTML = `<div class="bc-confirm-mark">✎</div><h3></h3><p></p><textarea class="bc-modal-textarea" rows="5" aria-label="Reactie aanpassen"></textarea><div class="bc-confirm-actions"><button type="button" class="btn light" data-choice="cancel">Annuleren</button><button type="button" class="btn" data-choice="save">Opslaan</button></div>`;
     dialog.querySelector('h3').textContent = title; dialog.querySelector('p').textContent = description;
     const textarea = dialog.querySelector('textarea'); textarea.value = initialValue; textarea.placeholder = placeholder;
     backdrop.appendChild(dialog); document.body.appendChild(backdrop);
