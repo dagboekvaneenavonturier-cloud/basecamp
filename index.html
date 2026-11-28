@@ -5,6 +5,7 @@
 
 
 
+
 <!doctype html>
 <html lang="nl">
 <head>
@@ -1430,24 +1431,120 @@ async function openChallengeEntry(challengeId) {
 }
 
 async function challengeEntriesHtml(challengeId) {
-  const {data:entries,error}=await sb.from('basecamp_challenge_entries').select('id,user_id,image_url,caption,created_at').eq('challenge_id',challengeId).order('created_at',{ascending:false});
-  if(error) throw error;if(!entries?.length)return '<p class="muted">Er zijn nog geen foto’s ingezonden. Misschien trap jij af?</p>';
-  const ids=[...new Set(entries.map(x=>x.user_id))];const {data:profiles}=await sb.from('profiles').select('id,display_name,avatar_url').in('id',ids);const people=Object.fromEntries((profiles||[]).map(x=>[x.id,x]));
-  const entryIds=entries.map(x=>x.id);const [{data:likes},{data:comments}]=await Promise.all([sb.from('basecamp_challenge_likes').select('id,entry_id,user_id').in('entry_id',entryIds),sb.from('basecamp_challenge_comments').select('id,entry_id,user_id,content,created_at').in('entry_id',entryIds).order('created_at')]);
-  return `<h3 style="font:21px Georgia;margin:22px 0 8px">Foto’s van deelnemers</h3><div class="challenge-grid">${entries.map(entry=>{const person=people[entry.user_id]||{};const entryLikes=(likes||[]).filter(x=>x.entry_id===entry.id);const entryComments=(comments||[]).filter(x=>x.entry_id===entry.id);return `<article class="challenge-entry"><div class="row" style="align-items:center;gap:8px;margin-bottom:9px">${avatarMarkup(person.avatar_url,person.display_name||'Avonturier')}<b>${esc(person.display_name||'Avonturier')}</b></div><img src="${esc(entry.image_url)}" alt="Challenge-inzending" loading="lazy">${entry.caption?`<p style="line-height:1.55">${esc(entry.caption)}</p>`:''}<div class="challenge-entry-actions"><button class="btn light" onclick="toggleChallengeLike('${entry.id}')">♡ ${entryLikes.length} ${entryLikes.length===1?'like':'likes'}${entryLikes.some(x=>x.user_id===me.id)?' · Vind ik leuk':''}</button><span class="muted">${entryComments.length} reacties</span></div><div style="margin-top:10px">${entryComments.map(c=>`<div style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(people[c.user_id]?.display_name||'Avonturier')}:</b> ${esc(c.content)}</div>`).join('')}<div class="row" style="gap:6px;margin-top:7px"><input class="challenge-input" style="margin:0;flex:1;min-width:0" id="challengeComment-${entry.id}" placeholder="Schrijf een reactie..."><button class="btn" onclick="addChallengeComment('${entry.id}')">Reageer</button></div></div></article>`;}).join('')}</div>`;
+  const {data:entries,error}=await sb.from('basecamp_challenge_entries')
+    .select('id,user_id,image_url,caption,created_at')
+    .eq('challenge_id',challengeId)
+    .order('created_at',{ascending:false});
+
+  if(error) throw error;
+  if(!entries?.length) return '<p class="muted">Er zijn nog geen foto’s ingezonden. Misschien trap jij af?</p>';
+
+  const entryIds=entries.map(x=>x.id);
+
+  const [{data:likes,error:likesError},{data:comments,error:commentsError}]=await Promise.all([
+    sb.from('basecamp_challenge_likes')
+      .select('id,entry_id,user_id')
+      .in('entry_id',entryIds),
+    sb.from('basecamp_challenge_comments')
+      .select('id,entry_id,user_id,content,created_at')
+      .in('entry_id',entryIds)
+      .order('created_at')
+  ]);
+
+  if(likesError) throw likesError;
+  if(commentsError) throw commentsError;
+
+  // Haal zowel de deelnemers als de auteurs van reacties op.
+  const profileIds=[...new Set([
+    ...entries.map(x=>x.user_id),
+    ...(comments||[]).map(x=>x.user_id)
+  ].filter(Boolean))];
+
+  const {data:profiles,error:profilesError}=await sb.from('profiles')
+    .select('id,display_name,avatar_url')
+    .in('id',profileIds);
+
+  if(profilesError) throw profilesError;
+
+  const people=Object.fromEntries((profiles||[]).map(x=>[x.id,x]));
+
+  return `<h3 style="font:21px Georgia;margin:22px 0 8px">Foto’s van deelnemers</h3>
+  <div class="challenge-grid">${entries.map(entry=>{
+    const person=people[entry.user_id]||{};
+    const entryLikes=(likes||[]).filter(x=>x.entry_id===entry.id);
+    const entryComments=(comments||[]).filter(x=>x.entry_id===entry.id);
+
+    return `<article class="challenge-entry">
+      <div class="row" style="align-items:center;gap:8px;margin-bottom:9px">
+        ${avatarMarkup(person.avatar_url,person.display_name||'Avonturier')}
+        <b>${esc(person.display_name||'Avonturier')}</b>
+      </div>
+      <img src="${esc(entry.image_url)}" alt="Challenge-inzending" loading="lazy">
+      ${entry.caption?`<p style="line-height:1.55">${esc(entry.caption)}</p>`:''}
+      <div class="challenge-entry-actions">
+        <button class="btn light" onclick="toggleChallengeLike('${entry.id}')">
+          ♡ ${entryLikes.length} ${entryLikes.length===1?'like':'likes'}${entryLikes.some(x=>x.user_id===me.id)?' · Vind ik leuk':''}
+        </button>
+        <span class="muted">${entryComments.length} reacties</span>
+      </div>
+      <div style="margin-top:10px">
+        ${entryComments.map(c=>{
+          const commenter=people[c.user_id]||{};
+          return `<div style="padding:6px 0;border-top:1px solid var(--line)">
+            <b>${esc(commenter.display_name||'Avonturier')}:</b> ${esc(c.content)}
+          </div>`;
+        }).join('')}
+        <div class="row" style="gap:6px;margin-top:7px">
+          <input class="challenge-input" style="margin:0;flex:1;min-width:0" id="challengeComment-${entry.id}" placeholder="Schrijf een reactie...">
+          <button class="btn" onclick="addChallengeComment('${entry.id}')">Reageer</button>
+        </div>
+      </div>
+    </article>`;
+  }).join('')}</div>`;
 }
 
 async function toggleChallengeLike(entryId) {
-  const {data:existing}=await sb.from('basecamp_challenge_likes').select('id').eq('entry_id',entryId).eq('user_id',me.id).maybeSingle();
-  const result=existing?await sb.from('basecamp_challenge_likes').delete().eq('id',existing.id):await sb.from('basecamp_challenge_likes').insert({entry_id:entryId});
-  if(result.error){alert(result.error.message);return;}await render();
+  if (!me?.id) {
+    alert('Je moet ingelogd zijn om een like te plaatsen.');
+    return;
+  }
+
+  const {data:existing,error:checkError}=await sb.from('basecamp_challenge_likes')
+    .select('id')
+    .eq('entry_id',entryId)
+    .eq('user_id',me.id)
+    .maybeSingle();
+
+  if(checkError) {
+    alert(checkError.message);
+    return;
+  }
+
+  const result=existing
+    ? await sb.from('basecamp_challenge_likes').delete().eq('id',existing.id)
+    : await sb.from('basecamp_challenge_likes').insert({
+        entry_id:entryId,
+        user_id:me.id
+      });
+
+  if(result.error) {
+    alert(result.error.message);
+    return;
+  }
+
+  await render();
 }
 
 async function addChallengeComment(entryId) {
   const input=$('challengeComment-'+entryId);
   const content=input?.value.trim();
 
-  if(!content)return;
+  if(!content) return;
+
+  if (!me?.id) {
+    alert('Je moet ingelogd zijn om een reactie te plaatsen.');
+    return;
+  }
 
   const {error}=await sb.from('basecamp_challenge_comments').insert({
     entry_id:entryId,
@@ -1455,7 +1552,11 @@ async function addChallengeComment(entryId) {
     content:content
   });
 
-  if(error){alert(error.message);return;}
+  if(error) {
+    alert(error.message);
+    return;
+  }
+
   await render();
 }
 
